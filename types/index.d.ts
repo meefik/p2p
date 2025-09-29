@@ -1,0 +1,55 @@
+export interface Driver {
+  on(namespace: string[], handler: (message: any) => void): void;
+  off(namespace: string[], handler: (message: any) => void): void;
+  emit(namespace: string[], message: any): void;
+}
+
+export interface SenderConfig {
+  driver: Driver;
+  iceServers?: RTCIceServer[];
+  audioBitrate?: number;
+  videoBitrate?: number;
+  audioCodecs?: string[];
+  videoCodecs?: string[];
+}
+
+export interface SenderStartOptions {
+  stream?: MediaStream;
+  room?: string;
+  metadata?: any;
+  dataChannel?: boolean;
+  audioEnabled?: boolean;
+  videoEnabled?: boolean;
+}
+
+export declare class Sender extends EventTarget {
+  constructor(config: SenderConfig);
+
+  start(options?: SenderStartOptions): void;
+  stop(): void;
+  send(data: string | Blob | ArrayBuffer | ArrayBufferView): void;
+
+  get audioEnabled(): boolean;
+  set audioEnabled(enabled: boolean);
+
+  get videoEnabled(): boolean;
+  set videoEnabled(enabled: boolean);
+}
+
+export interface ReceiverConfig {
+  driver: Driver;
+  iceServers?: RTCIceServer[];
+  timeout?: number;
+  attempts?: number;
+}
+
+export interface ReceiverStartOptions {
+  room?: string;
+}
+
+export declare class Receiver extends EventTarget {
+  constructor(config: ReceiverConfig);
+
+  start(options?: ReceiverStartOptions): void;
+  stop(): void;
+}
