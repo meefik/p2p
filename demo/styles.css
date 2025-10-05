@@ -24,8 +24,8 @@ body {
 .grid {
   flex: 3;
   display: grid;
-  grid-template-columns: repeat(var(--cols, 3), 1fr);
-  grid-template-rows: repeat(var(--rows, 2), 1fr);
+  grid-template-columns: repeat(var(--cols, 1), 1fr);
+  grid-template-rows: repeat(var(--rows, 1), 1fr);
   gap: 0.25em;
   width: 100%;
   height: 100%;
@@ -48,7 +48,8 @@ body {
 }
 
 .grid > div {
-  display: block;
+  display: flex;
+  gap: 0.25em;
   position: relative;
   overflow: hidden;
   width: 100%;
@@ -59,36 +60,71 @@ body {
   box-sizing: border-box;
 }
 
-.grid > div[data-name]::before {
-  content: attr(data-name);
-  position: absolute;
+.grid video {
+  flex-grow: 1;
   display: block;
-  font-size: 0.75em;
-  color: #888;
+  height: 100%;
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  overflow: hidden;
+  cursor: pointer;
   background-color: #222;
-  padding: 0.25em 0.5em;
+}
+
+.grid video[data-mirror] {
+  transform: rotateY(180deg);
+}
+
+.grid video:not([data-video="true"]) {
+  display: none;
+}
+
+.grid video[data-expanded="true"] {
+  position: absolute;
   left: 0;
   top: 0;
+  width: 100%;
+  height: 100%;
   z-index: 1;
 }
 
-.grid > div:not([data-audio="true"])::after {
-  content: '🔇';
-  position: absolute;
+.grid > div::before {
+  content: attr(data-name);
   display: block;
-  font-size: 0.75em;
-  background-color: #222;
-  padding: 0.25em 0.5em;
-  right: 0;
+  position: absolute;
+  left: 0;
   top: 0;
-  z-index: 1;
+  max-width: 50%;
+  padding: 0.5em;
+  font-size: 1em;
+  line-height: 1em;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background-color: #222;
+  z-index: 2;
 }
 
-.grid > div:not([data-video="true"])::after {
+.grid > div:not(:has(video))::before {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 3em;
+}
+
+.grid > div > div {
+  display: none;
+}
+
+.grid > div:has(video[data-audio="true"]):not(:has(video[data-video="true"]))::after {
   content: '🔊';
   position: absolute;
   display: block;
   font-size: 3em;
+  line-height: 1em;
   width: 1em;
   height: 1em;
   left: calc(50% - 0.5em);
@@ -96,22 +132,17 @@ body {
   z-index: 1;
 }
 
-.grid > div:not([data-video="true"]) video {
-  display: none;
-}
-
-.grid video {
+.grid > div:has(video[data-video="true"]):not(:has(video[data-audio="true"]))::after {
+  content: '🔇';
+  position: absolute;
   display: block;
-  /* width: 100%; */
-  height: 100%;
-  margin: auto;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.grid video[data-mirror] {
-  transform: rotateY(180deg);
+  font-size: 1em;
+  line-height: 1em;
+  background-color: #222;
+  padding: 0.5em;
+  right: 0;
+  top: 0;
+  z-index: 1;
 }
 
 /* Chat */
@@ -180,14 +211,15 @@ body {
   display: block;
   box-sizing: border-box;
   padding: 0.5em;
-  border: 2px solid #bb00ff;
+  border: none;
+  border-top: 2px solid #444;
   border-radius: 0 0 0.25em 0.25em;
   resize: none;
-  background-color: #333;
+  background-color: #222;
 }
 
 .chat textarea.input:focus {
-  outline: 2px dashed #888;
+  outline: 1px solid #bb00ff;
 }
 
 /* Toolbar */
@@ -215,23 +247,23 @@ body {
 .toolbar button {
   padding: 0.5em;
   font-size: 1em;
-  border: 2px solid #888;
+  border: 2px solid #333;
   border-radius: 50%;
-  background-color: #bb00ff;
+  background-color: #888;
   color: inherit;
   cursor: pointer;
 }
 
 .toolbar button:hover {
-  filter: brightness(0.8);
+  filter: brightness(80%);
 }
 
 .toolbar button:focus {
-  outline: 2px dashed #888;
+  outline: 1px solid #bb00ff;
 }
 
 .toolbar button[data-enabled="true"] {
-  background-color: #a00;
+  background-color: #bb00ff;
 }
 
 .toolbar .microphone_btn::after {
@@ -282,7 +314,7 @@ body {
 .dialog input, .dialog select {
   display: block;
   padding: 0.5em;
-  border: 2px solid #bb00ff;
+  border: 2px solid #444;
   border-radius: 0.25em;
   background-color: #222;
   margin-top: 0.5em;
@@ -290,30 +322,28 @@ body {
   color: inherit;
 }
 
-.dialog input:focus, .dialog select:focus {
-  outline: 2px dashed #888;
-}
-
 .dialog button {
   display: block;
-  background-color: #333;
-  border: 2px solid #888;
+  background-color: #222;
+  border: 2px solid #444;
   border-radius: 0.25em;
-  padding: 0.25em 0.5em;
-  min-width: 100px;
+  padding: 0.5em;
+  width: 100%;
   color: inherit;
-  margin-inline-start: auto;
+  margin-top: 1em;
   font-weight: bold;
   font-size: 1em;
   cursor: pointer
 }
 
 .dialog button:hover {
-  background-color: #222;
+  background-color: #333;
 }
 
+.dialog input:focus,
+.dialog select:focus,
 .dialog button:focus {
-  outline: 2px dashed #888;
+  outline: 1px solid #bb00ff;
 }
 
 /* Error */

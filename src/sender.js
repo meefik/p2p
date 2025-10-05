@@ -18,10 +18,10 @@ import {
  * @param {Object} config - Configuration object.
  * @param {Object} config.driver - Signaling driver (required) used to emit/on messages.
  * @param {Array<Object>} [config.iceServers] - STUN/TURN servers to use for RTCPeerConnection.
- * @param {number} [config.audioBitrate=16] - Target audio bitrate in kbps.
- * @param {number} [config.videoBitrate=64] - Target video bitrate in kbps.
- * @param {Array<string>} [config.audioCodecs=["audio/opus"]] - Preferred audio codecs.
- * @param {Array<string>} [config.videoCodecs=["video/VP8", "video/VP9"]] - Preferred video codecs.
+ * @param {number} [config.audioBitrate] - Target audio bitrate in kbps.
+ * @param {number} [config.videoBitrate] - Target video bitrate in kbps.
+ * @param {Array<string>} [config.audioCodecs] - Preferred audio codecs.
+ * @param {Array<string>} [config.videoCodecs] - Preferred video codecs.
  *
  * Events emitted (CustomEvent.detail):
  * - 'connect' : { id, peer } // peer connection established
@@ -45,10 +45,10 @@ export class Sender extends EventTarget {
     const {
       driver,
       iceServers = defaultIceServers,
-      audioBitrate = 16,
-      videoBitrate = 64,
-      audioCodecs = ['audio/opus'],
-      videoCodecs = ['video/VP8', 'video/VP9'],
+      audioBitrate,
+      videoBitrate,
+      audioCodecs,
+      videoCodecs,
     } = config || {};
     if (!driver) {
       throw new Error('Missing driver');
@@ -64,35 +64,23 @@ export class Sender extends EventTarget {
     this.candidateQueues = new Map();
   }
 
+  get active() {
+    return !!this._handler;
+  }
+
   start(options) {
     if (this._handler) return;
 
     const {
       stream,
       room,
-      metadata,
+      state,
       dataChannel,
-      audioEnabled,
-      videoEnabled,
     } = options || {};
 
     this.id = stream?.id || uuid();
-    this.stream = stream;
     this.room = room || 'default';
-    this.metadata = metadata;
-
-    if (stream) {
-      if (typeof audioEnabled === 'boolean') {
-        stream.getAudioTracks().forEach((t) => {
-          t.enabled = !!audioEnabled;
-        });
-      }
-      if (typeof videoEnabled === 'boolean') {
-        stream.getVideoTracks().forEach((t) => {
-          t.enabled = !!videoEnabled;
-        });
-      }
-    }
+    this.state = state || {};
 
     this._handler = async (e) => {
       const { type, id, candidate, answer } = e;
@@ -200,12 +188,7 @@ export class Sender extends EventTarget {
           if (!stream || dataChannel) {
             const channel = peer.createDataChannel(id);
             channel.addEventListener('open', () => {
-              this.dispatchEvent(new CustomEvent('open', {
-                detail: { id, channel },
-              }));
-            }, { once: true });
-            channel.addEventListener('close', () => {
-              this.dispatchEvent(new CustomEvent('close', {
+              this.dispatchEvent(new CustomEvent('channel', {
                 detail: { id, channel },
               }));
             }, { once: true });
@@ -225,9 +208,7 @@ export class Sender extends EventTarget {
             type: 'offer',
             id: this.id,
             offer,
-            metadata: this.metadata,
-            audioEnabled: this.audioEnabled,
-            videoEnabled: this.videoEnabled,
+            state: this.state,
           });
         }
         catch (error) {
@@ -287,6 +268,20 @@ export class Sender extends EventTarget {
     }
   }
 
+  sync(state, merge) {
+    if (merge) {
+      Object.assign(this.state, state);
+    }
+
+    for (const id of this.peers.keys()) {
+      this.driver.emit(['receiver', this.room, id], {
+        type: 'sync',
+        id: this.id,
+        state: this.state,
+      });
+    }
+  }
+
   dispose(id, error) {
     const channel = this.channels.get(id);
     if (channel) {
@@ -314,45 +309,5 @@ export class Sender extends EventTarget {
         detail: { id, error },
       }));
     }
-  }
-
-  get audioEnabled() {
-    return this.stream
-      ? this.stream.getAudioTracks().some(t => t.enabled)
-      : false;
-  }
-
-  get videoEnabled() {
-    return this.stream
-      ? this.stream.getVideoTracks().some(t => t.enabled)
-      : false;
-  }
-
-  set audioEnabled(enabled) {
-    if (!this.stream || this.audioEnabled === !!enabled) return;
-
-    this.stream?.getAudioTracks().forEach((t) => {
-      t.enabled = !!enabled;
-    });
-
-    this.driver.emit(['receiver', this.room], {
-      type: 'change',
-      id: this.id,
-      audioEnabled: !!enabled,
-    });
-  }
-
-  set videoEnabled(enabled) {
-    if (!this.stream || this.videoEnabled === !!enabled) return;
-
-    this.stream?.getVideoTracks().forEach((t) => {
-      t.enabled = !!enabled;
-    });
-
-    this.driver.emit(['receiver', this.room], {
-      type: 'change',
-      id: this.id,
-      videoEnabled: !!enabled,
-    });
   }
 }

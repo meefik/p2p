@@ -3,15 +3,14 @@ function createGrid() {
   grid.className = 'grid';
 
   grid.resize = () => {
-    const videos = grid.querySelectorAll('video');
-    const n = videos.length;
+    const n = grid.childElementCount;
     if (n === 0) {
       grid.style.setProperty('--rows', 1);
       grid.style.setProperty('--cols', 1);
       return;
     }
 
-    const videoAspect = 16 / 9;
+    const aspectRatio = 16 / 9;
     const cw = grid.clientWidth || window.innerWidth;
     const ch = grid.clientHeight || window.innerHeight;
 
@@ -22,8 +21,8 @@ function createGrid() {
       const cellW = cw / cols;
       const cellH = ch / rows;
 
-      const tileW = Math.min(cellW, cellH * videoAspect);
-      const tileH = tileW / videoAspect;
+      const tileW = Math.min(cellW, cellH * aspectRatio);
+      const tileH = tileW / aspectRatio;
 
       const totalArea = tileW * tileH * n;
       const empty = cols * rows - n;
@@ -39,46 +38,71 @@ function createGrid() {
     grid.style.setProperty('--cols', best.cols);
   };
 
-  grid.appendItem = (id, options) => {
-    const { stream, muted = false, mirror = false, username, audioEnabled, videoEnabled } = options || {};
+  grid.appendItem = (id, pid, options) => {
+    const {
+      stream,
+      source,
+      muted = false,
+      mirror = false,
+      nickname,
+      audioEnabled,
+      videoEnabled,
+    } = options || {};
 
-    const el = grid.querySelector(`div[data-id="${id}"]`);
-    if (el) return;
-
-    const div = document.createElement('div');
-    div.dataset.id = id;
-    if (username) {
-      div.dataset.name = username;
+    const parent = grid.querySelector(`div[data-id="${pid}"]`) || document.createElement('div');
+    parent.dataset.id = pid;
+    if (nickname) {
+      parent.dataset.name = nickname;
     }
-    if (typeof audioEnabled === 'boolean') {
-      div.dataset.audio = audioEnabled;
+
+    if (stream) {
+      const video = parent.querySelector(`video[data-id="${id}"]`) || document.createElement('video');
+      video.dataset.id = id;
+      video.autoplay = true;
+      video.muted = muted;
+      video.playsInline = true;
+      video.oncontextmenu = e => e.preventDefault();
+      video.onclick = () => {
+        if (video.dataset.expanded) {
+          delete video.dataset.expanded;
+        }
+        else {
+          video.dataset.expanded = 'true';
+        }
+      };
+      if (source) video.dataset.source = source;
+      if (mirror) video.dataset.mirror = true;
+      if (typeof audioEnabled === 'boolean') {
+        video.dataset.audio = audioEnabled;
+      }
+      if (typeof videoEnabled === 'boolean') {
+        video.dataset.video = videoEnabled;
+      }
+
+      parent.appendChild(video);
+      video.srcObject = stream;
+      video.play();
     }
-    if (typeof videoEnabled === 'boolean') {
-      div.dataset.video = videoEnabled;
+    else {
+      const stub = parent.querySelector(`div[data-id="${id}"]`) || document.createElement('div');
+      stub.dataset.id = id;
+      parent.appendChild(stub);
     }
 
-    const video = document.createElement('video');
-    video.autoplay = true;
-    video.muted = muted;
-    video.playsInline = true;
-    video.oncontextmenu = e => e.preventDefault();
-    video.onclick = () => video.play();
-    if (mirror) video.dataset.mirror = true;
-
-    div.appendChild(video);
-    video.srcObject = stream;
-    video.play();
-
-    grid.appendChild(div);
+    grid.appendChild(parent);
     grid.resize();
   };
 
   grid.removeItem = (id) => {
     if (!id) return;
 
-    const div = grid.querySelector(`div[data-id="${id}"]`);
-    if (div) {
-      grid.removeChild(div);
+    const item = grid.querySelector(`[data-id="${id}"]`);
+    if (item) {
+      const parent = item.parentElement;
+      item.remove();
+      if (parent !== grid && !parent.childElementCount) {
+        parent.remove();
+      }
       grid.resize();
     }
   };
@@ -86,17 +110,13 @@ function createGrid() {
   grid.updateItem = (id, options) => {
     if (!id) return;
 
-    const { username, audioEnabled, videoEnabled } = options || {};
-    const div = grid.querySelector(`div[data-id="${id}"]`);
-    if (div) {
-      if (username) {
-        div.dataset.name = username;
-      }
-      if (typeof audioEnabled === 'boolean') {
-        div.dataset.audio = audioEnabled;
-      }
-      if (typeof videoEnabled === 'boolean') {
-        div.dataset.video = videoEnabled;
+    const item = grid.querySelector(`[data-id="${id}"]`);
+    if (item) {
+      for (const option in options) {
+        const value = options[option];
+        if (typeof value !== 'undefined') {
+          item.dataset[option] = value;
+        }
       }
     }
   };
@@ -231,15 +251,15 @@ function createChat({ toolbar, onMessage }) {
   };
   chat.appendChild(input);
 
-  chat.appendMessage = (message, username) => {
+  chat.appendMessage = (message, nickname) => {
     chat.hidden = false;
     toolbar.toggleChat(true);
 
     const div = document.createElement('div');
     div.className = 'message';
     div.textContent = message;
-    if (username) {
-      div.dataset.name = username;
+    if (nickname) {
+      div.dataset.name = nickname;
     }
     div.dataset.time = new Date().toLocaleTimeString();
     messages.appendChild(div);
@@ -252,53 +272,57 @@ function createChat({ toolbar, onMessage }) {
   return chat;
 }
 
-function createDialog({ username, method, onSubmit }) {
-  const dialog = document.createElement('div');
+function createDialog({ nickname, driver, onSubmit }) {
+  const dialog = document.createElement('form');
   dialog.className = 'dialog';
 
   const container = document.createElement('div');
 
   const label1 = document.createElement('label');
-  label1.textContent = 'Enter your name:';
-  const usernameInput = document.createElement('input');
-  usernameInput.value = username || '';
+  label1.textContent = 'Your name:';
+  const nicknameInput = document.createElement('input');
+  nicknameInput.name = 'nickname';
+  nicknameInput.value = nickname || '';
+  label1.appendChild(nicknameInput);
+  container.appendChild(label1);
 
   const label2 = document.createElement('label');
-  label2.textContent = 'Driver:';
-  const methodSelect = document.createElement('select');
+  label2.textContent = 'Signaling driver:';
+  const driverSelect = document.createElement('select');
+  driverSelect.name = 'driver';
   const option1 = document.createElement('option');
   option1.value = 'local';
-  option1.selected = method === 'local';
+  option1.selected = driver === 'local';
   option1.textContent = 'LocalStorage';
-  methodSelect.appendChild(option1);
+  driverSelect.appendChild(option1);
   const option2 = document.createElement('option');
   option2.value = 'nats';
-  option2.selected = method === 'nats';
+  option2.selected = driver === 'nats';
   option2.textContent = 'NATS';
-  methodSelect.appendChild(option2);
+  driverSelect.appendChild(option2);
+  label2.appendChild(driverSelect);
+  container.appendChild(label2);
 
   const button = document.createElement('button');
   button.textContent = 'JOIN';
-  button.onclick = async () => {
-    if (!usernameInput.value) return;
+  button.type = 'submit';
+  container.appendChild(button);
+  dialog.appendChild(container);
+
+  dialog.onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(dialog);
+    const nickname = fd.get('nickname');
+    const driver = fd.get('driver');
+    if (!nickname || !driver) return;
     button.disabled = true;
     try {
-      await onSubmit({
-        username: usernameInput.value,
-        method: methodSelect.value,
-      });
+      await onSubmit({ nickname, driver });
     }
     finally {
       button.disabled = false;
     }
   };
-
-  label1.appendChild(usernameInput);
-  container.appendChild(label1);
-  label2.appendChild(methodSelect);
-  container.appendChild(label2);
-  container.appendChild(button);
-  dialog.appendChild(container);
 
   return dialog;
 }
@@ -324,11 +348,12 @@ export function createApp({ onMicrophone, onCamera, onScreen, onMessage, onJoin 
   });
 
   const dialog = createDialog({
-    username: localStorage.getItem('username') || 'Guest',
-    method: localStorage.getItem('method') || 'local',
-    onSubmit: async ({ method, username }) => {
-      localStorage.setItem('username', username);
-      localStorage.setItem('method', method);
+    nickname: localStorage.getItem('nickname') || 'Guest',
+    driver: localStorage.getItem('driver') || 'local',
+    onSubmit: async ({ driver, nickname }) => {
+      localStorage.setItem('nickname', nickname);
+      localStorage.setItem('driver', driver);
+
       container.appendChild(grid);
       container.appendChild(chat);
       container.appendChild(toolbar);
@@ -338,10 +363,12 @@ export function createApp({ onMicrophone, onCamera, onScreen, onMessage, onJoin 
       const room = hash || Math.random().toString(36).slice(2, 10);
       if (!hash) location.hash = `#${room}`;
 
-      onJoin({ method, room, username });
+      container.dataset.id = Math.random().toString(36).slice(2, 10);
+      container.dataset.room = room;
+      container.dataset.driver = driver;
+      container.dataset.nickname = nickname;
 
-      container.getUserName = () => username;
-      container.getRoomName = () => room;
+      onJoin(container);
     },
   });
 

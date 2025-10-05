@@ -3,21 +3,34 @@ import { LocalDriver } from './driver/local.js';
 import { NatsDriver } from './driver/nats.js';
 import { createApp } from './ui.js';
 
-const setupConference = async ({ method, room, username }) => {
+const setupConference = async (app) => {
   let driver;
-  if (method === 'local') {
+  if (app.dataset.driver === 'local') {
     driver = new LocalDriver();
   }
-  else if (method === 'nats') {
-    driver = new NatsDriver({ secret: location.origin });
+  else if (app.dataset.driver === 'nats') {
+    driver = new NatsDriver({ secret: location.href });
   }
   else {
-    throw new Error('Unknown method: ' + method);
+    throw new Error(`Unknown method: ${app.dataset.driver}`);
   }
+
   const receiver = new Receiver({ driver });
   const dataSender = new Sender({ driver });
   const cameraSender = new Sender({ driver });
   const screenSender = new Sender({ driver });
+
+  receiver.addEventListener('stream', (e) => {
+    const { id, stream, state } = e.detail;
+    const { nickname = 'Guest', pid, audio, video, source } = state || {};
+    app.appendItem(id, pid, { stream, source, nickname, audioEnabled: audio, videoEnabled: video });
+  });
+
+  receiver.addEventListener('channel', (e) => {
+    const { id, state } = e.detail;
+    const { nickname = 'Guest', pid } = state || {};
+    app.appendItem(id, pid, { nickname });
+  });
 
   receiver.addEventListener('dispose', (e) => {
     const { id } = e.detail;
@@ -25,25 +38,26 @@ const setupConference = async ({ method, room, username }) => {
   });
 
   receiver.addEventListener('message', (e) => {
-    const { message, metadata } = e.detail;
-    const { username = 'Guest' } = metadata || {};
-    app.appendMessage(message, username);
+    const { message, state } = e.detail;
+    const { nickname = 'Guest' } = state || {};
+    app.appendMessage(message, nickname);
   });
 
-  receiver.addEventListener('stream', (e) => {
-    const { id, stream, audioEnabled, videoEnabled, metadata } = e.detail;
-    const { username } = metadata || {};
-    app.appendItem(id, { stream, audioEnabled, videoEnabled, username });
-  });
-
-  receiver.addEventListener('change', (e) => {
-    const { id, audioEnabled, videoEnabled } = e.detail;
-    app.updateItem(id, { audioEnabled, videoEnabled });
+  receiver.addEventListener('sync', (e) => {
+    const { id, state } = e.detail;
+    const { audio, video } = state || {};
+    app.updateItem(id, { audio, video });
   });
 
   await driver.open();
-  receiver.start({ room });
-  dataSender.start({ room, metadata: { username } });
+
+  receiver.start({ room: app.dataset.room });
+  dataSender.start({
+    room: app.dataset.room,
+    state: { nickname: app.dataset.nickname, pid: app.dataset.id },
+  });
+
+  app.appendItem(dataSender.id, app.dataset.id, { nickname: app.dataset.nickname });
 
   return { dataSender, cameraSender, screenSender };
 };
@@ -53,43 +67,50 @@ const captureCamera = async (options) => {
     app,
     sender,
     stream,
-    audioEnabled = sender.audioEnabled,
-    videoEnabled = sender.videoEnabled,
+    audioEnabled,
+    videoEnabled,
   } = options || {};
 
-  if (!stream?.active && (audioEnabled || videoEnabled)) {
+  if (!stream && (audioEnabled || videoEnabled)) {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: true,
     });
+    stream.getAudioTracks().forEach(track => (track.enabled = !!audioEnabled));
+    stream.getVideoTracks().forEach(track => (track.enabled = !!videoEnabled));
     sender.start({
       stream,
-      room: app.getRoomName(),
-      metadata: { username: app.getUserName() },
-      audioEnabled: !!audioEnabled,
-      videoEnabled: !!videoEnabled,
+      room: app.dataset.room,
+      state: { pid: app.dataset.id, source: 'camera', audio: !!audioEnabled, video: !!videoEnabled },
     });
-    app.appendItem(stream.id, {
+    app.appendItem(sender.id, app.dataset.id, {
       stream,
+      source: 'camera',
       muted: true,
       mirror: true,
       audioEnabled: !!audioEnabled,
       videoEnabled: !!videoEnabled,
-      username: app.getUserName(),
     });
     return stream;
   }
   else if (stream) {
-    if (!audioEnabled && !videoEnabled) {
+    if (typeof audioEnabled !== 'undefined') {
+      stream.getAudioTracks().forEach(track => (track.enabled = !!audioEnabled));
+    }
+    if (typeof videoEnabled !== 'undefined') {
+      stream.getVideoTracks().forEach(track => (track.enabled = !!videoEnabled));
+    }
+    const isAudioEnabled = stream.getAudioTracks().some(track => track.enabled);
+    const isVideoEnabled = stream.getVideoTracks().some(track => track.enabled);
+    if (!isAudioEnabled && !isVideoEnabled) {
+      app.removeItem(sender.id);
       sender.stop();
-      app.removeItem(stream.id);
       stream.getTracks().forEach(track => track.stop());
       return null;
     }
     else {
-      sender.audioEnabled = audioEnabled;
-      sender.videoEnabled = videoEnabled;
-      app.updateItem(stream.id, { audioEnabled, videoEnabled });
+      sender.sync({ audio: isAudioEnabled, video: isVideoEnabled }, true);
+      app.updateItem(sender.id, { audio: isAudioEnabled, video: isVideoEnabled });
       return stream;
     }
   }
@@ -97,28 +118,33 @@ const captureCamera = async (options) => {
 };
 
 const captureScreen = async (options) => {
-  const { app, sender, stream, videoEnabled } = options || {};
+  const {
+    app,
+    sender,
+    stream,
+    videoEnabled,
+  } = options || {};
 
-  if (!stream?.active && videoEnabled) {
+  if (!stream && videoEnabled) {
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
     });
     sender.start({
       stream,
-      room: app.getRoomName(),
-      metadata: { username: app.getUserName() },
+      room: app.dataset.room,
+      state: { pid: app.dataset.id, source: 'screen', video: true },
     });
-    app.appendItem(stream.id, {
+    app.appendItem(sender.id, app.dataset.id, {
       stream,
+      source: 'screen',
       muted: true,
       videoEnabled: true,
-      username: app.getUserName(),
     });
     return stream;
   }
   else if (stream) {
+    app.removeItem(sender.id);
     sender.stop();
-    app.removeItem(stream.id);
     stream.getTracks().forEach(track => track.stop());
     return null;
   }
@@ -127,8 +153,8 @@ const captureScreen = async (options) => {
 let senders, cameraStream, screenStream;
 
 const app = createApp({
-  async onJoin({ method, room, username }) {
-    senders = await setupConference({ method, room, username });
+  async onJoin(app) {
+    senders = await setupConference(app);
   },
   async onMicrophone(enabled) {
     const stream = await captureCamera({

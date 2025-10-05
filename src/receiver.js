@@ -53,6 +53,10 @@ export class Receiver extends EventTarget {
     this.candidateQueues = new Map();
   }
 
+  get active() {
+    return !!this._handler;
+  }
+
   start(options) {
     if (this._handler) return;
 
@@ -62,7 +66,7 @@ export class Receiver extends EventTarget {
     this.room = room || 'default';
 
     this._handler = async (e) => {
-      const { type, id, offer, candidate, audioEnabled, videoEnabled, metadata } = e;
+      const { type, id, offer, candidate, state } = e;
       if (!type || !id || this.id === id) return;
 
       // request connection
@@ -99,7 +103,7 @@ export class Receiver extends EventTarget {
             switch (iceConnectionState) {
               case 'connected': {
                 this.dispatchEvent(new CustomEvent('connect', {
-                  detail: { id, peer },
+                  detail: { id, peer, state },
                 }));
                 break;
               }
@@ -132,19 +136,14 @@ export class Receiver extends EventTarget {
             this.channels.set(id, channel);
 
             channel.addEventListener('open', () => {
-              this.dispatchEvent(new CustomEvent('open', {
-                detail: { id, channel },
-              }));
-            }, { once: true });
-            channel.addEventListener('close', () => {
-              this.dispatchEvent(new CustomEvent('close', {
-                detail: { id, channel },
+              this.dispatchEvent(new CustomEvent('channel', {
+                detail: { id, channel, state },
               }));
             }, { once: true });
             channel.addEventListener('message', (e) => {
               const { data: message } = e;
               this.dispatchEvent(new CustomEvent('message', {
-                detail: { id, message, metadata },
+                detail: { id, message, state },
               }));
             });
           }, { once: true });
@@ -152,7 +151,7 @@ export class Receiver extends EventTarget {
           peer.addEventListener('track', (e) => {
             const [stream] = e.streams;
             this.dispatchEvent(new CustomEvent('stream', {
-              detail: { id, stream, audioEnabled, videoEnabled, metadata },
+              detail: { id, stream, state },
             }));
           }, { once: true });
 
@@ -213,13 +212,13 @@ export class Receiver extends EventTarget {
         return;
       }
 
-      // change media state
-      if (type === 'change') {
+      // sync media state
+      if (type === 'sync') {
         const peer = this.peers.get(id);
         if (!peer) return;
 
-        this.dispatchEvent(new CustomEvent('change', {
-          detail: { id, audioEnabled, videoEnabled },
+        this.dispatchEvent(new CustomEvent('sync', {
+          detail: { id, state },
         }));
 
         return;

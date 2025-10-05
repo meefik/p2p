@@ -1,6 +1,6 @@
 {
   "name": "p2p",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A lightweight library for creating peer-to-peer WebRTC conferencing with custom signaling drivers.",
   "author": "Anton Skshidlevsky <meefik@gmail.com>",
   "main": "src/index.js",

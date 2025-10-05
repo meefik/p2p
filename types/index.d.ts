@@ -16,10 +16,8 @@ export interface SenderConfig {
 export interface SenderStartOptions {
   stream?: MediaStream;
   room?: string;
-  metadata?: any;
+  state?: object;
   dataChannel?: boolean;
-  audioEnabled?: boolean;
-  videoEnabled?: boolean;
 }
 
 export declare class Sender extends EventTarget {
@@ -28,12 +26,7 @@ export declare class Sender extends EventTarget {
   start(options?: SenderStartOptions): void;
   stop(): void;
   send(data: string | Blob | ArrayBuffer | ArrayBufferView): void;
-
-  get audioEnabled(): boolean;
-  set audioEnabled(enabled: boolean);
-
-  get videoEnabled(): boolean;
-  set videoEnabled(enabled: boolean);
+  sync(state: object, merge?: boolean): void;
 }
 
 export interface ReceiverConfig {

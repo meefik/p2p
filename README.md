@@ -80,8 +80,8 @@ const driver = new MemoryDriver();
 const receiver = new Receiver({ driver });
 
 receiver.addEventListener('stream', (e) => {
-  const { id, stream, metadata } = e.detail;
-  console.log('remote stream from', id, metadata);
+  const { id, stream } = e.detail;
+  console.log('stream received', id);
 
   // attach to a video element
   const video = document.createElement('video');
@@ -90,14 +90,19 @@ receiver.addEventListener('stream', (e) => {
   document.body.appendChild(video);
 });
 
-receiver.addEventListener('message', (e) => {
-  const { id, message, metadata } = e.detail;
-  console.log('message from', id, message, metadata);
+receiver.addEventListener('channel', (e) => {
+  const { id } = e.detail;
+  console.log('data channel opened', id);
 });
 
-receiver.addEventListener('connect', (e) => {
+receiver.addEventListener('message', (e) => {
+  const { id, message } = e.detail;
+  console.log('message received', id, message);
+});
+
+receiver.addEventListener('dispose', (e) => {
   const { id } = e.detail;
-  console.log('peer connected', id);
+  console.log('peer disposed', id);
 });
 
 // start listening in the same room as the sender
@@ -107,44 +112,35 @@ receiver.start({ room: 'demo-room' });
 // receiver.stop();
 ```
 
-## Broadcasting local webcam
+## Broadcasting webcam and sending messages
 
 Sender sends an offer to receivers in a room and publishes your local stream.
 
 ```javascript
 import { Sender } from 'p2p';
 
-// prepare local stream (browser)
-const stream = await navigator.mediaDevices.getUserMedia({
-  audio: true,
-  video: true
-});
-
 // create sender
 const sender = new Sender({ driver });
 
-sender.addEventListener('open', (e) => {
+sender.addEventListener('channel', (e) => {
   const { id } = e.detail;
   console.log('data channel opened', id);
   // send text data to the connected receiver
   sender.send('Hello from sender!');
 });
-sender.addEventListener('error', (e) => {
-  const { id, error } = e.detail;
-  console.error('sender error', id, error);
-});
 
-// start sender, provide local stream and room name
-sender.start({
-  stream,
-  room: 'demo-room',
-  metadata: { name: 'Alice' },
-  dataChannel: true, // create data channels for each receiver
+// prepare local stream (browser)
+navigator.mediaDevices.getUserMedia({
+  audio: true,
+  video: true
+}).then((stream) => {
+  // start sender, provide local stream and room name
+  sender.start({
+    stream,
+    room: 'demo-room',
+    dataChannel: true, // create data channels for each receiver
+  });
 });
-
-// toggle audio/video at runtime
-sender.audioEnabled = false;
-sender.videoEnabled = true;
 
 // to stop and close everything:
 // sender.stop();
@@ -175,7 +171,7 @@ Messages include type fields:
 - `offer` — sender -> receiver with SDP offer and metadata
 - `answer` — receiver -> sender with SDP answer
 - `candidate` — ICE candidate exchange
-- `change` — media toggles (audioEnabled/videoEnabled)
+- `sync` — state sync (such as audio/video enabled)
 - `dispose` — tear down
 
 ### Sender
@@ -188,26 +184,24 @@ A class creates outgoing PeerConnections, publishes local MediaStream and option
 - `iceServers`: `Array<RTCIceServer>` — RTCPeerConnection `iceServers` for NAT traversal.
 - `audioBitrate`: `number` — Target audio bitrate (kbps).
 - `videoBitrate`: `number` — Target video bitrate (kbps).
-- `audioCodecs`: `Array<string>` — Preferred audio codec lists (in order).
-- `videoCodecs`: `Array<string>` — Preferred video codec lists (in order).
+- `audioCodecs`: `Array<string>` — Preferred audio codec lists (in order, for example: `['audio/opus']`).
+- `videoCodecs`: `Array<string>` — Preferred video codec lists (in order, for example: `['video/VP8', 'video/VP9']`).
 
 **Methods**
 
 - `start(options: object): void` — Begin broadcasting. Options:
   - `stream: MediaStream` — Local media to publish.
   - `room: string` — Room name to signal into (`default` if omitted).
-  - `metadata: any` — Arbitrary metadata sent with the offer.
-  - `dataChannel: boolean` — Create per-peer DataChannels when `true` (or when no `stream`).
-  - `audioEnabled: boolean` — Initial audio track enabled flag.
-  - `videoEnabled: boolean` —  Initial video track enabled flag.
+  - `state: object` — Arbitrary state sent with the offer.
+  - `dataChannel: boolean` — Create per-peer data channels when `true` (or when no `stream`).
 - `stop(): void` — Close all peer connections, data channels, and stop broadcasting.
 - `send(data: any): void` — Send `data` over all open data channels to connected receivers.
+- `sync(state: object): void` — Update and send `state` to all connected receivers.
 
 **Events**
 
 - `connect`: `{ detail: { id: string, peer: RTCPeerConnection } }` — New peer connection established.
-- `open`: `{ detail: { id: string, channel: RTCDataChannel } }` — DataChannel opened for peer `id`.
-- `close`: `{ detail: { id: string, channel: RTCDataChannel } }` — DataChannel closed for peer `id`.
+- `channel`: `{ detail: { id: string, channel: RTCDataChannel } }` — DataChannel opened for peer `id`.
 - `dispose`: `{ detail: { id: string, peer: RTCPeerConnection } }` — Peer connection torn down.
 - `error`: `{ detail: { id: string, error: Error } }` — Error related to peer `id` (or general sender error).
 
@@ -230,12 +224,11 @@ A class listens for offers, answers them, and exposes remote streams and incomin
 
 **Events**
 
-- `stream`: `{ id: string, stream: MediaStream, audioEnabled: boolean, videoEnabled: boolean, metadata: any }` — Remote MediaStream received from peer `id`.
-- `message`: `{ id: string, message: any, metadata: any }` — DataChannel message from peer `id`.
-- `change`: `{ id: string, audioEnabled: boolean, videoEnabled: boolean }` — Remote toggled audio/video.
-- `connect`:  `{ id: string, peer: RTCPeerConnection }` — Peer connection established.
-- `open`: `{ id: string, channel: RTCDataChannel }` — Data channel opened.
-- `close`: `{ id: string, channel: RTCDataChannel }` — Data channel closed.
+- `stream`: `{ id: string, stream: MediaStream, state: object }` — Remote MediaStream received from peer `id`.
+- `message`: `{ id: string, message: any, state: object }` — DataChannel message from peer `id`.
+- `sync`: `{ id: string, state: object }` — Remote state (such as audio/video enabled).
+- `connect`:  `{ id: string, peer: RTCPeerConnection, state: object }` — Peer connection established.
+- `channel`: `{ id: string, channel: RTCDataChannel, state: object }` — Data channel opened.
 - `dispose`: `{ id: string, peer: RTCPeerConnection }` — Peer connection disposed.
 - `error`: `{ id: string, error: Error }` — Error related to peer `id` (or general receiver error).
 
