@@ -58,17 +58,17 @@ export function setPreferredCodecs(peerConnection, preferredCodecs, kind = 'vide
   if (
     preferredCodecs?.length > 0
     && typeof peerConnection?.getTransceivers === 'function'
-    && 'RTCRtpReceiver' in window
+    && 'RTCRtpSender' in window
     && 'RTCRtpTransceiver' in window
-    && 'getCapabilities' in window.RTCRtpReceiver
+    && 'getCapabilities' in window.RTCRtpSender
     && 'setCodecPreferences' in window.RTCRtpTransceiver.prototype
   ) {
     const transceivers = peerConnection.getTransceivers().filter((transceiver) => {
-      return transceiver.receiver.track.kind === kind;
+      return transceiver?.sender?.track?.kind === kind;
     });
     if (!transceivers.length) return;
 
-    const codecs = RTCRtpReceiver.getCapabilities(kind).codecs.filter((codec) => {
+    const codecs = RTCRtpSender.getCapabilities(kind).codecs.filter((codec) => {
       return preferredCodecs.includes(codec.mimeType);
     });
     if (!codecs.length) return;
