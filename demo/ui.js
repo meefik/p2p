@@ -1,3 +1,7 @@
+function isMobile() {
+  return /iOS|Android/.test(navigator.userAgent);
+}
+
 function createGrid() {
   const grid = document.createElement('div');
   grid.className = 'grid';
@@ -167,6 +171,7 @@ function createToolbar({ onMicrophone, onCamera, onScreen, onChat }) {
   toolbar.appendChild(cameraButton);
 
   const screenButton = document.createElement('button');
+  screenButton.hidden = isMobile();
   screenButton.className = 'screen_btn';
   screenButton.title = 'Screen';
   screenButton.dataset.enabled = 'false';
@@ -222,12 +227,25 @@ function createChat({ toolbar, onMessage }) {
   chat.className = 'chat';
   chat.hidden = true;
 
-  const messages = document.createElement('div');
-  messages.className = 'messages';
+  const header = document.createElement('header');
+  const title = document.createElement('div');
+  title.textContent = 'Chat';
+  header.appendChild(title);
+  const closeButton = document.createElement('button');
+  closeButton.title = 'Close';
+  closeButton.innerHTML = '&times;';
+  closeButton.onclick = () => {
+    chat.hidden = true;
+    toolbar.toggleChat(false);
+  };
+  header.appendChild(closeButton);
+  chat.appendChild(header);
+
+  const messages = document.createElement('main');
   chat.appendChild(messages);
 
+  const footer = document.createElement('footer');
   const input = document.createElement('textarea');
-  input.className = 'input';
   input.placeholder = 'Type your message...';
   input.onkeydown = async (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -249,7 +267,8 @@ function createChat({ toolbar, onMessage }) {
       }
     }
   };
-  chat.appendChild(input);
+  footer.appendChild(input);
+  chat.appendChild(footer);
 
   chat.appendMessage = (message, nickname) => {
     chat.hidden = false;

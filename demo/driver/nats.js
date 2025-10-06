@@ -3,10 +3,6 @@ import { connect, StringCodec } from 'https://esm.sh/nats.ws';
 const sc = StringCodec();
 
 const createEncryptionKey = async (secret) => {
-  const { crypto } = window;
-  if (!crypto?.subtle) {
-    throw new Error('Web Crypto Subtle API is required for encryption but not available.');
-  }
   const secretHash = await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(secret),
