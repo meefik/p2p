@@ -1,51 +1,50 @@
-export class LocalDriver {
-  open() {
-    this._handlers = {};
-    this._storageHandler = (e) => {
+export class LocalDriver extends Map {
+  constructor() {
+    super();
+    this._storageEventHandler = (e) => {
       const { key, newValue } = e;
       const data = JSON.parse(newValue);
-      if (this._handlers[key]) {
-        for (const handler of this._handlers[key]) {
+      if (this.has(key)) {
+        for (const handler of this.get(key)) {
           handler(data);
         }
       }
     };
-    window.addEventListener('storage', this._storageHandler);
+  }
+
+  open() {
+    window.addEventListener('storage', this._storageEventHandler);
   }
 
   close() {
-    this._handlers = {};
-    window.removeEventListener('storage', this._storageHandler);
+    window.removeEventListener('storage', this._storageEventHandler);
   }
 
   on(namespace, handler) {
-    if (!namespace || !handler) return;
-    const ns = [].concat(namespace).join('.');
-    if (!this._handlers[ns]) {
-      this._handlers[ns] = new Set();
+    const ns = namespace.join(':');
+    if (!this.has(ns)) {
+      this.set(ns, new Set());
     }
-    this._handlers[ns].add(handler);
+    this.get(ns).add(handler);
   }
 
   off(namespace, handler) {
-    if (!namespace) return;
-    const ns = [].concat(namespace).join('.');
-    if (this._handlers[ns]) {
+    const ns = namespace.join(':');
+    if (this.has(ns)) {
       if (handler) {
-        this._handlers[ns].delete(handler);
+        this.get(ns).delete(handler);
       }
       else {
-        this._handlers[ns].clear();
+        this.get(ns).clear();
       }
-      if (!this._handlers[ns].size) {
-        delete this._handlers[ns];
+      if (!this.get(ns).size) {
+        this.delete(ns);
       }
     }
   }
 
   emit(namespace, data) {
-    if (!namespace || !data) return;
-    const ns = [].concat(namespace).join('.');
+    const ns = namespace.join(':');
     localStorage.setItem(ns, JSON.stringify({ ...data, _: Math.random() }));
   }
 }

@@ -34,17 +34,16 @@ const decrypt = async (data, cryptoKey) => {
   return payload;
 };
 
-export class NatsDriver {
-  constructor({ servers, secret } = {}) {
+export class NatsDriver extends Map {
+  constructor({ servers } = {}) {
+    super();
     this.servers = servers || ['wss://demo.nats.io:8443'];
-    this._secret = secret;
-    this._handlers = new Map();
   }
 
-  async open() {
+  async open(secret) {
     this.nc = await connect({ servers: this.servers, noEcho: true });
-    if (this._secret) {
-      this._cryptoKey = await createEncryptionKey(this._secret);
+    if (secret) {
+      this.cryptoKey = await createEncryptionKey(secret);
     }
   }
 
@@ -53,7 +52,7 @@ export class NatsDriver {
   }
 
   on(namespace, handler) {
-    const ns = [].concat(namespace).join('.');
+    const ns = namespace.join(':');
     const sub = this.nc.subscribe(ns, {
       callback: async (err, msg) => {
         if (err) {
@@ -61,37 +60,37 @@ export class NatsDriver {
           return;
         }
         let data = msg.data;
-        if (this._cryptoKey) {
-          data = await decrypt(data, this._cryptoKey);
+        if (this.cryptoKey) {
+          data = await decrypt(data, this.cryptoKey);
         }
         const payload = JSON.parse(sc.decode(data));
         handler(payload);
       },
     });
-    if (!this._handlers.has(ns)) {
-      this._handlers.set(ns, new Map());
+    if (!this.has(ns)) {
+      this.set(ns, new Map());
     }
-    this._handlers.get(ns).set(handler, sub);
+    this.get(ns).set(handler, sub);
   }
 
   off(namespace, handler) {
-    const ns = [].concat(namespace).join('.');
-    const sub = this._handlers.get(ns)?.get(handler);
+    const ns = namespace.join(':');
+    const sub = this.get(ns)?.get(handler);
     if (sub) {
       sub.unsubscribe();
-      this._handlers.get(ns).delete(handler);
+      this.get(ns).delete(handler);
     }
-    if (this._handlers.get(ns)?.size === 0) {
-      this._handlers.delete(ns);
+    if (!this.get(ns)?.size) {
+      this.delete(ns);
     }
   }
 
   async emit(namespace, message) {
-    const ns = [].concat(namespace).join('.');
+    const ns = namespace.join(':');
     if (this.nc) {
       let data = sc.encode(JSON.stringify(message));
-      if (this._cryptoKey) {
-        data = await encrypt(data, this._cryptoKey);
+      if (this.cryptoKey) {
+        data = await encrypt(data, this.cryptoKey);
       }
       this.nc.publish(ns, data);
     }

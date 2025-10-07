@@ -9,7 +9,7 @@ const setupConference = async (app) => {
     driver = new LocalDriver();
   }
   else if (app.dataset.driver === 'nats') {
-    driver = new NatsDriver({ secret: location.href });
+    driver = new NatsDriver();
   }
   else {
     throw new Error(`Unknown method: ${app.dataset.driver}`);
@@ -49,7 +49,7 @@ const setupConference = async (app) => {
     app.updateItem(id, { audio, video });
   });
 
-  await driver.open();
+  await driver.open(location.href);
 
   receiver.start({ room: app.dataset.room });
   dataSender.start({
