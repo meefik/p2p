@@ -7,6 +7,8 @@ export interface Driver {
 export interface SenderConfig {
   driver: Driver;
   iceServers?: RTCIceServer[];
+  connectionTimeout?: number;
+  queueSize?: number;
   audioBitrate?: number;
   videoBitrate?: number;
   audioCodecs?: string[];
@@ -25,15 +27,16 @@ export declare class Sender extends EventTarget {
 
   start(options?: SenderStartOptions): void;
   stop(): void;
-  send(data: string | Blob | ArrayBuffer | ArrayBufferView): void;
+  send(data: string | Blob | ArrayBuffer | ArrayBufferView, id?: string): void;
   sync(state: object, merge?: boolean): void;
 }
 
 export interface ReceiverConfig {
   driver: Driver;
   iceServers?: RTCIceServer[];
-  timeout?: number;
-  attempts?: number;
+  connectionTimeout?: number;
+  pingInterval?: number;
+  reconnectAttempts?: number;
 }
 
 export interface ReceiverStartOptions {
