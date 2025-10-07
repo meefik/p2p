@@ -9,7 +9,7 @@ The library provides two small building blocks:
 - `Sender` — creates outgoing PeerConnections, publishes local MediaStream and optional DataChannels, and sends offers to remote receivers through a signaling driver.
 - `Receiver` — listens for offers, answers them, and exposes remote streams and incoming data messages.
 
-The library is signaling-agnostic: you must provide a driver with `on(namespace, handler)`, `off(namespace, handler)` and `emit(namespace, message)` semantics. This allows usage with WebSocket, Pub/Sub services (such as NATS), server-side event buses, or a simple in-memory driver for prototypes.
+The library is signaling-agnostic: you must provide a driver with `on(namespace, handler)`, `off(namespace, handler)` and `emit(namespace, data)` semantics. This allows usage with WebSocket, Pub/Sub services (such as NATS), server-side event buses, or a simple in-memory driver for prototypes.
 
 ## How to use
 
@@ -42,27 +42,26 @@ This tiny driver is useful for local testing and examples. Replace it with your 
 
 ```javascript
 // Minimal in-memory pub/sub driver
-class MemoryDriver {
+class MemoryDriver extends Map {
   constructor() {
-    this._handlers = new Map();
+    super();
   }
   on(namespace, handler) {
-    const k = [].concat(namespace).join('.');
-    if (!this._handlers.has(k)) {
-      this._handlers.set(k, new Set());
+    const k = namespace.join(':');
+    if (!this.has(k)) {
+      this.set(k, new Set());
     }
-    this._handlers.get(k).add(handler);
+    this.get(k).add(handler);
   }
   off(namespace, handler) {
-    const k = [].concat(namespace).join('.');
-    this._handlers.get(k)?.delete(handler);
+    const k = namespace.join(':');
+    this.get(k)?.delete(handler);
   }
-  emit(namespace, msg) {
-    const k = [].concat(namespace).join('.');
-    const hs = this._handlers.get(k);
-    if (hs) {
-      for (const h of hs) {
-        try { h(msg); } catch (e) { /* swallow */ }
+  emit(namespace, data) {
+    const k = namespace.join(':');
+    if (this.has(k)) {
+      for (const h of this.get(k)) {
+        try { h(data); } catch (e) { /* swallow */ }
       }
     }
   }
@@ -101,8 +100,8 @@ receiver.addEventListener('message', (e) => {
 });
 
 receiver.addEventListener('dispose', (e) => {
-  const { id } = e.detail;
-  console.log('peer disposed', id);
+  const { id, error } = e.detail;
+  console.log('peer disposed', id, error);
 });
 
 // start listening in the same room as the sender
@@ -122,11 +121,11 @@ import { Sender } from 'p2p';
 // create sender
 const sender = new Sender({ driver });
 
-sender.addEventListener('channel', (e) => {
+sender.addEventListener('connect', (e) => {
   const { id } = e.detail;
-  console.log('data channel opened', id);
+  console.log('peer connected', id);
   // send text data to the connected receiver
-  sender.send('Hello from sender!');
+  sender.send('Hello from sender!', id);
 });
 
 // prepare local stream (browser)
@@ -142,7 +141,7 @@ navigator.mediaDevices.getUserMedia({
   });
 });
 
-// to stop and close everything:
+// to stop and close everything
 // sender.stop();
 ```
 
@@ -182,6 +181,8 @@ A class creates outgoing PeerConnections, publishes local MediaStream and option
 
 - `driver`: `object` — Signaling driver implementing `on(namespace, handler)`, `off(namespace, handler)`, `emit(namespace, message)`.
 - `iceServers`: `Array<RTCIceServer>` — RTCPeerConnection `iceServers` for NAT traversal.
+- `connectionTimeout`: `number` — Time in seconds to wait for PeerConnection to connect (30 by default).
+- `queueSize`: `number` — Maximum number of messages to queue if no channels are connected (10 by default).
 - `audioBitrate`: `number` — Target audio bitrate (kbps).
 - `videoBitrate`: `number` — Target video bitrate (kbps).
 - `audioCodecs`: `Array<string>` — Preferred audio codec lists (in order, for example: `['audio/opus']`).
@@ -195,15 +196,14 @@ A class creates outgoing PeerConnections, publishes local MediaStream and option
   - `state: object` — Arbitrary state sent with the offer.
   - `dataChannel: boolean` — Create per-peer data channels when `true` (or when no `stream`).
 - `stop(): void` — Close all peer connections, data channels, and stop broadcasting.
-- `send(data: any): void` — Send `data` over all open data channels to connected receivers.
-- `sync(state: object): void` — Update and send `state` to all connected receivers.
+- `send(data: any, id?: string): void` — Send `data` over all open data channels to connected receivers.
+- `sync(state: object, merge?: boolean): void` — Update and send `state` to all connected receivers.
 
 **Events**
 
-- `connect`: `{ detail: { id: string, peer: RTCPeerConnection } }` — New peer connection established.
-- `channel`: `{ detail: { id: string, channel: RTCDataChannel } }` — DataChannel opened for peer `id`.
-- `dispose`: `{ detail: { id: string, peer: RTCPeerConnection } }` — Peer connection torn down.
-- `error`: `{ detail: { id: string, error: Error } }` — Error related to peer `id` (or general sender error).
+- `connect`: `{ id: string, peer: RTCPeerConnection }` — Peer connection established.
+- `dispose`: `{ id: string, peer: RTCPeerConnection, error?: Error }` — Peer connection closed.
+- `error`: `{ id: string, error: Error }` — Non-fatal error occurred.
 
 ### Receiver
 
@@ -213,8 +213,9 @@ A class listens for offers, answers them, and exposes remote streams and incomin
 
 - `driver`: `object` — Signaling driver with `on/off/emit`.
 - `iceServers`: `Array<RTCIceServer>` — Configuration of STUN or TURN servers.
-- `timeout`: `number` — Time to wait for responses / attempts (seconds).
-- `attempts`: `number` — Number of retry attempts for offers/answers.
+- `connectionTimeout`: `number` — Time in seconds to wait for PeerConnection to connect (30 by default).
+- `pingInterval`: `number` — Ping interval in seconds for presence checks (30 by default).
+- `reconnectAttempts`: `number` — Number of retry attempts for offers/answers (10 by default).
 
 **Methods**
 
@@ -225,12 +226,12 @@ A class listens for offers, answers them, and exposes remote streams and incomin
 **Events**
 
 - `stream`: `{ id: string, stream: MediaStream, state: object }` — Remote MediaStream received from peer `id`.
-- `message`: `{ id: string, message: any, state: object }` — DataChannel message from peer `id`.
-- `sync`: `{ id: string, state: object }` — Remote state (such as audio/video enabled).
+- `message`: `{ id: string, message: any, state: object }` — Data channel message from peer `id`.
+- `channel`: `{ id: string, channel: RTCDataChannel, state: object }` — Data channel established with peer `id`.
+- `sync`: `{ id: string, state: object }` — Remote state changed (such as audio/video enabled).
 - `connect`:  `{ id: string, peer: RTCPeerConnection, state: object }` — Peer connection established.
-- `channel`: `{ id: string, channel: RTCDataChannel, state: object }` — Data channel opened.
-- `dispose`: `{ id: string, peer: RTCPeerConnection }` — Peer connection disposed.
-- `error`: `{ id: string, error: Error }` — Error related to peer `id` (or general receiver error).
+- `dispose`: `{ id: string, peer: RTCPeerConnection, state: object, error?: Error }` — Peer connection closed.
+- `error`: `{ id: string, error: Error }` — Non-fatal error occurred.
 
 ## Notes and tips
 

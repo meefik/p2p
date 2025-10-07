@@ -16,28 +16,25 @@ import {
  * @extends {EventTarget}
  *
  * @param {Object} config - Configuration object.
- * @param {Object} config.driver - Signaling driver (required) used to emit/on messages.
- * @param {Array<Object>} [config.iceServers] - STUN/TURN servers to use for RTCPeerConnection.
+ * @param {Object} config.driver - Signaling driver (required) used to receive and send messages.
+ * @param {Array<RTCIceServer>} [config.iceServers] - STUN/TURN servers to use for RTCPeerConnection.
+ * @param {number} [config.connectionTimeout=30] - Connection timeout in seconds.
+ * @param {number} [config.queueSize=10] - Maximum number of messages to queue if no channels are connected.
  * @param {number} [config.audioBitrate] - Target audio bitrate in kbps.
  * @param {number} [config.videoBitrate] - Target video bitrate in kbps.
  * @param {Array<string>} [config.audioCodecs] - Preferred audio codecs.
  * @param {Array<string>} [config.videoCodecs] - Preferred video codecs.
  *
  * Events emitted (CustomEvent.detail):
- * - 'connect' : { id, peer } // peer connection established
- * - 'open' : { id, channel } // data channel opened
- * - 'close' : { id, channel } // data channel closed
- * - 'dispose' : { id, peer } // peer disposed
- * - 'error'   : { id, error } // error occurred
+ * - 'connect' : { id: string, peer: RTCPeerConnection } // peer connection established
+ * - 'dispose' : { id: string, error?: Error } // peer disposed
+ * - 'error'   : { id: string, error: Error } // non-fatal error occurred
  *
  * Public methods:
- * - start(options) : Begin listening for signaling; options.room can be provided.
- * - stop()         : Stop listening and close all connections.
- * - send(data)     : Send data to all connected peers via data channels.
- *
- * Public properties:
- * - audioEnabled : Boolean - Enable/disable audio tracks.
- * - videoEnabled : Boolean - Enable/disable video tracks.
+ * - start(options)     : Begin listening for signaling; options.room can be provided.
+ * - stop()             : Stop listening and close all connections.
+ * - send(data, id)     : Send data via data channel (all connected peers or specific peer).
+ * - sync(state, merge) : Update sender state and notify all connected peers.
  */
 export class Sender extends EventTarget {
   constructor(config) {
@@ -45,6 +42,8 @@ export class Sender extends EventTarget {
     const {
       driver,
       iceServers = defaultIceServers,
+      connectionTimeout = 30,
+      queueSize = 10,
       audioBitrate,
       videoBitrate,
       audioCodecs,
@@ -55,12 +54,13 @@ export class Sender extends EventTarget {
     }
     this.driver = driver;
     this.iceServers = iceServers;
+    this.connectionTimeout = connectionTimeout;
+    this.queueSize = queueSize;
     this.audioBitrate = audioBitrate;
     this.videoBitrate = videoBitrate;
     this.audioCodecs = audioCodecs;
     this.videoCodecs = videoCodecs;
-    this.peers = new Map();
-    this.channels = new Map();
+    this.connections = new Map();
     this.candidateQueues = new Map();
   }
 
@@ -86,91 +86,59 @@ export class Sender extends EventTarget {
       const { type, id, candidate, answer } = e;
       if (!type || !id || id === this.id) return;
 
-      // add ice candidate
-      if (type === 'candidate' && candidate) {
-        const peer = this.peers.get(id);
-
-        if (!peer) {
-          if (!this.candidateQueues.has(id)) this.candidateQueues.set(id, []);
-          this.candidateQueues.get(id).push(candidate);
-          return;
-        }
-
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-        catch (error) {
-          this.dispatchEvent(new CustomEvent('error', {
-            detail: { id, error },
-          }));
-        }
-
-        return;
-      }
-
-      // set remote description
-      if (type === 'answer' && answer) {
-        const peer = this.peers.get(id);
-        if (!peer) return;
-
-        try {
-          await peer.setRemoteDescription(new RTCSessionDescription(answer));
-        }
-        catch (err) {
-          return this.dispose(id, err);
-        }
-
-        // add queued candidates
-        if (this.candidateQueues.has(id)) {
-          for (const candidate of this.candidateQueues.get(id)) {
-            try {
-              await peer.addIceCandidate(new RTCIceCandidate(candidate));
-            }
-            catch (error) {
-              this.dispatchEvent(new CustomEvent('error', {
-                detail: { id, error },
-              }));
-            }
-          }
-          this.candidateQueues.delete(id);
-        }
-
-        return;
-      }
-
-      // create new peer
+      // create new peer connection
       if (type === 'invoke') {
-        if (this.peers.has(id)) return;
+        if (this.connections.has(id)) return;
 
         try {
-          const peer = new RTCPeerConnection({
-            iceServers: this.iceServers,
-          });
-          this.peers.set(id, peer);
+          const conn = {
+            id,
+            peer: new RTCPeerConnection({ iceServers: this.iceServers }),
+            dispose: (error) => {
+              clearTimeout(timeout);
+              this.connections.delete(id);
 
-          peer.addEventListener('iceconnectionstatechange', (e) => {
+              conn.channel?.close();
+              conn.peer?.close();
+
+              this.driver.emit(['receiver', this.room, id], {
+                type: 'dispose',
+                id: this.id,
+                state: this.state,
+              });
+
+              this.dispatchEvent(new CustomEvent('dispose', {
+                detail: { id, peer: conn.peer, error },
+              }));
+            },
+            queue: [],
+          };
+          this.connections.set(id, conn);
+
+          const timeout = this.connectionTimeout > 0 && setTimeout(
+            () => conn.dispose(new Error('Connection timeout')),
+            this.connectionTimeout * 1000,
+          );
+
+          conn.peer.addEventListener('iceconnectionstatechange', (e) => {
             const { iceConnectionState } = e.target;
             switch (iceConnectionState) {
-              case 'connected': {
+              case 'connected':
+                clearTimeout(timeout);
                 this.dispatchEvent(new CustomEvent('connect', {
-                  detail: { id, peer },
+                  detail: { id, peer: conn.peer },
                 }));
                 break;
-              }
-              case 'disconnected': {
-                const err = new Error('ICE connection state is disconnected');
-                this.dispose(id, err);
+              case 'disconnected':
+                conn.dispose();
                 break;
-              }
-              case 'failed': {
-                const err = new Error('ICE connection state is failed');
-                this.dispose(id, err);
+              case 'failed':
+                conn.dispose(new Error('ICE connection failed'));
                 break;
-              }
             }
           });
 
-          peer.addEventListener('icecandidate', (e) => {
+          conn.peer.addEventListener('icecandidate', (e) => {
             if (!e?.candidate) return;
             this.driver.emit(['receiver', this.room, id], {
               type: 'candidate',
@@ -180,28 +148,29 @@ export class Sender extends EventTarget {
           });
 
           if (stream) {
-            stream.getTracks().forEach(track => peer.addTrack(track, stream));
-            setPeerConnectionBitrate(peer, this.audioBitrate, this.videoBitrate);
-            setPreferredCodecs(peer, this.videoCodecs, 'video');
-            setPreferredCodecs(peer, this.audioCodecs, 'audio');
+            stream.getTracks().forEach(track => conn.peer.addTrack(track, stream));
+            setPeerConnectionBitrate(conn.peer, this.audioBitrate, this.videoBitrate);
+            setPreferredCodecs(conn.peer, this.videoCodecs, 'video');
+            setPreferredCodecs(conn.peer, this.audioCodecs, 'audio');
           }
           if (!stream || dataChannel) {
-            const channel = peer.createDataChannel(id);
-            channel.addEventListener('open', () => {
-              this.dispatchEvent(new CustomEvent('channel', {
-                detail: { id, channel },
-              }));
+            conn.channel = conn.peer.createDataChannel(id);
+            conn.channel.addEventListener('open', () => {
+              // flush queued messages
+              while (conn.queue.length) {
+                const data = conn.queue.shift();
+                conn.channel.send(data);
+              }
             }, { once: true });
-            this.channels.set(id, channel);
           }
 
-          const offer = await peer.createOffer({
+          const offer = await conn.peer.createOffer({
             offerToReceiveAudio: stream ? stream.getAudioTracks().length > 0 : false,
             offerToReceiveVideo: stream ? stream.getVideoTracks().length > 0 : false,
             iceRestart: false,
           });
 
-          await peer.setLocalDescription(offer);
+          await conn.peer.setLocalDescription(offer);
 
           // send offer
           this.driver.emit(['receiver', this.room, id], {
@@ -212,9 +181,58 @@ export class Sender extends EventTarget {
           });
         }
         catch (error) {
-          this.dispatchEvent(new CustomEvent('error', {
-            detail: { id, error },
-          }));
+          const conn = this.connections.get(id);
+          if (conn) conn.dispose(error);
+          else this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+        }
+
+        return;
+      }
+
+      // set remote description
+      if (type === 'answer' && answer) {
+        const conn = this.connections.get(id);
+        if (!conn) return;
+
+        try {
+          await conn.peer.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+        catch (error) {
+          conn.dispose(error);
+          return;
+        }
+
+        // add queued candidates
+        if (this.candidateQueues.has(id)) {
+          for (const candidate of this.candidateQueues.get(id)) {
+            try {
+              await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+            catch (error) {
+              this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+            }
+          }
+          this.candidateQueues.delete(id);
+        }
+
+        return;
+      }
+
+      // add ice candidate
+      if (type === 'candidate' && candidate) {
+        const conn = this.connections.get(id);
+
+        if (!conn) {
+          if (!this.candidateQueues.has(id)) this.candidateQueues.set(id, []);
+          this.candidateQueues.get(id).push(candidate);
+          return;
+        }
+
+        try {
+          await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+        catch (error) {
+          this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
         }
 
         return;
@@ -236,34 +254,36 @@ export class Sender extends EventTarget {
     this.driver.off(['sender', this.room], this._handler);
     this.driver.off(['sender', this.room, this.id], this._handler);
 
-    for (const channel of this.channels.values()) {
-      channel.close();
+    for (const conn of this.connections.values()) {
+      conn.dispose();
     }
-    this.channels.clear();
 
-    for (const [id, peer] of this.peers) {
-      peer.close();
-
-      this.driver.emit(['receiver', this.room, id], {
-        type: 'dispose',
-        id: this.id,
-      });
-
-      this.dispatchEvent(new CustomEvent('dispose', {
-        detail: { id, peer },
-      }));
-    }
-    this.peers.clear();
-
+    this.connections.clear();
     this.candidateQueues.clear();
 
     delete this._handler;
   }
 
-  send(data) {
-    for (const channel of this.channels.values()) {
-      if (channel.readyState === 'open') {
-        channel.send(data);
+  send(data, id) {
+    const send = (conn, data) => {
+      if (conn.channel?.readyState === 'open') {
+        conn.channel.send(data);
+      }
+      else {
+        conn.queue.push(data);
+        if (conn.queue.length > this.queueSize) {
+          conn.queue.shift();
+        }
+      }
+    };
+
+    if (id) {
+      const conn = this.connections.get(id);
+      if (conn) send(conn, data);
+    }
+    else {
+      for (const conn of this.connections.values()) {
+        send(conn, data);
       }
     }
   }
@@ -273,41 +293,12 @@ export class Sender extends EventTarget {
       Object.assign(this.state, state);
     }
 
-    for (const id of this.peers.keys()) {
+    for (const id of this.connections.keys()) {
       this.driver.emit(['receiver', this.room, id], {
         type: 'sync',
         id: this.id,
         state: this.state,
       });
-    }
-  }
-
-  dispose(id, error) {
-    const channel = this.channels.get(id);
-    if (channel) {
-      channel.close();
-      this.channels.delete(id);
-    }
-
-    const peer = this.peers.get(id);
-    if (peer) {
-      peer.close();
-      this.peers.delete(id);
-
-      this.driver.emit(['receiver', this.room, id], {
-        type: 'dispose',
-        id: this.id,
-      });
-
-      this.dispatchEvent(new CustomEvent('dispose', {
-        detail: { id, peer },
-      }));
-    }
-
-    if (error) {
-      this.dispatchEvent(new CustomEvent('error', {
-        detail: { id, error },
-      }));
     }
   }
 }
