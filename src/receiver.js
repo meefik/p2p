@@ -15,8 +15,8 @@ import {
  * @param {Object} config.driver - Signaling driver (required) used to receive and send messages.
  * @param {Array<RTCIceServer>} [config.iceServers] - ICE servers for RTCPeerConnection.
  * @param {number} [config.connectionTimeout=30] - Connection timeout in seconds.
- * @param {number} [config.pingInterval=30] - Ping interval in seconds for presence checks.
- * @param {number} [config.reconnectAttempts=10] - Number of ping attempts while peers are present.
+ * @param {number} [config.pingInterval=30] - Ping interval in seconds to re-establish connections.
+ * @param {number} [config.pingAttempts=10] - Number of ping attempts after all peers are gone.
  *
  * Events emitted (CustomEvent.detail):
  * - 'message' : { id: string, message: any } // data channel message received
@@ -39,7 +39,7 @@ export class Receiver extends EventTarget {
       iceServers = defaultIceServers,
       connectionTimeout = 30,
       pingInterval = 30,
-      reconnectAttempts = 10,
+      pingAttempts = 10,
     } = config || {};
     if (!driver) {
       throw new Error('Missing driver');
@@ -48,7 +48,7 @@ export class Receiver extends EventTarget {
     this.iceServers = iceServers;
     this.connectionTimeout = connectionTimeout;
     this.pingInterval = pingInterval;
-    this.reconnectAttempts = reconnectAttempts;
+    this.pingAttempts = pingAttempts;
     this.connections = new Map();
     this.candidateQueues = new Map();
   }
@@ -60,7 +60,7 @@ export class Receiver extends EventTarget {
   start(options) {
     if (this._handler) return;
 
-    const { room } = options || {};
+    const { room, credentials } = options || {};
 
     this.id = uuid();
     this.room = room || 'default';
@@ -76,6 +76,7 @@ export class Receiver extends EventTarget {
         this.driver.emit(['sender', this.room, id], {
           type: 'invoke',
           id: this.id,
+          credentials,
         });
 
         return;
@@ -248,18 +249,20 @@ export class Receiver extends EventTarget {
     this.driver.emit(['sender', this.room], {
       type: 'invoke',
       id: this.id,
+      credentials,
     });
 
     this._ping = 0;
     this._timer = setInterval(() => {
       if (this.connections.size > 0) {
-        this._ping = this.reconnectAttempts;
+        this._ping = this.pingAttempts;
       }
       if (this._ping > 0) {
         this._ping--;
         this.driver.emit(['sender', this.room], {
           type: 'invoke',
           id: this.id,
+          credentials,
         });
       }
     }, this.pingInterval * 1000);

@@ -7,6 +7,7 @@ export interface Driver {
 export interface SenderConfig {
   driver: Driver;
   iceServers?: RTCIceServer[];
+  verify?: (id: string, credentials: any) => boolean;
   connectionTimeout?: number;
   queueSize?: number;
   audioBitrate?: number;
@@ -16,8 +17,8 @@ export interface SenderConfig {
 }
 
 export interface SenderStartOptions {
+  room: string;
   stream?: MediaStream;
-  room?: string;
   state?: object;
   dataChannel?: boolean;
 }
@@ -36,11 +37,12 @@ export interface ReceiverConfig {
   iceServers?: RTCIceServer[];
   connectionTimeout?: number;
   pingInterval?: number;
-  reconnectAttempts?: number;
+  pingAttempts?: number;
 }
 
 export interface ReceiverStartOptions {
-  room?: string;
+  room: string;
+  credentials?: any;
 }
 
 export declare class Receiver extends EventTarget {

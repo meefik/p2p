@@ -18,8 +18,9 @@ import {
  * @param {Object} config - Configuration object.
  * @param {Object} config.driver - Signaling driver (required) used to receive and send messages.
  * @param {Array<RTCIceServer>} [config.iceServers] - STUN/TURN servers to use for RTCPeerConnection.
+ * @param {Function} [config.verify] - Optional async function to verify incoming connection requests.
  * @param {number} [config.connectionTimeout=30] - Connection timeout in seconds.
- * @param {number} [config.queueSize=10] - Maximum number of messages to queue if no channels are connected.
+ * @param {number} [config.queueSize=10] - Maximum number of messages to queue if no data channels are connected.
  * @param {number} [config.audioBitrate] - Target audio bitrate in kbps.
  * @param {number} [config.videoBitrate] - Target video bitrate in kbps.
  * @param {Array<string>} [config.audioCodecs] - Preferred audio codecs.
@@ -42,6 +43,7 @@ export class Sender extends EventTarget {
     const {
       driver,
       iceServers = defaultIceServers,
+      verify,
       connectionTimeout = 30,
       queueSize = 10,
       audioBitrate,
@@ -54,6 +56,7 @@ export class Sender extends EventTarget {
     }
     this.driver = driver;
     this.iceServers = iceServers;
+    this.verify = verify;
     this.connectionTimeout = connectionTimeout;
     this.queueSize = queueSize;
     this.audioBitrate = audioBitrate;
@@ -83,12 +86,17 @@ export class Sender extends EventTarget {
     this.state = state || {};
 
     this._handler = async (e) => {
-      const { type, id, candidate, answer } = e;
+      const { type, id, candidate, answer, credentials } = e;
       if (!type || !id || id === this.id) return;
 
       // create new peer connection
       if (type === 'invoke') {
         if (this.connections.has(id)) return;
+
+        if (this.verify) {
+          const isValid = await this.verify(id, credentials);
+          if (!isValid) return;
+        }
 
         try {
           const conn = {

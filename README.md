@@ -181,6 +181,7 @@ A class creates outgoing PeerConnections, publishes local MediaStream and option
 
 - `driver`: `object` — Signaling driver implementing `on(namespace, handler)`, `off(namespace, handler)`, `emit(namespace, message)`.
 - `iceServers`: `Array<RTCIceServer>` — RTCPeerConnection `iceServers` for NAT traversal.
+- `verify`: `(id: string, credentials: any) => boolean` — Optional function to verify incoming connection requests; should return `true` to accept or `false` to reject.
 - `connectionTimeout`: `number` — Time in seconds to wait for PeerConnection to connect (30 by default).
 - `queueSize`: `number` — Maximum number of messages to queue if no channels are connected (10 by default).
 - `audioBitrate`: `number` — Target audio bitrate (kbps).
@@ -214,13 +215,14 @@ A class listens for offers, answers them, and exposes remote streams and incomin
 - `driver`: `object` — Signaling driver with `on/off/emit`.
 - `iceServers`: `Array<RTCIceServer>` — Configuration of STUN or TURN servers.
 - `connectionTimeout`: `number` — Time in seconds to wait for PeerConnection to connect (30 by default).
-- `pingInterval`: `number` — Ping interval in seconds for presence checks (30 by default).
-- `reconnectAttempts`: `number` — Number of retry attempts for offers/answers (10 by default).
+- `pingInterval`: `number` — Ping interval in seconds to re-establish connections (30 by default).
+- `pingAttempts`: `number` — Number of ping attempts after all peers are gone. (10 by default).
 
 **Methods**
 
 - `start(options: object): void` — Begin listening for senders in `room` and respond to offers.
   - `room: string` — Room name to signal into (`default` if omitted).
+  - `credentials: any` — Optional credentials to identify/authorize the receiver.
 - `stop(): void` — Close peers and stop listening.
 
 **Events**
