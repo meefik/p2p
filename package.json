@@ -1,6 +1,6 @@
 {
   "name": "p2p",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A lightweight library for creating peer-to-peer WebRTC conferencing with custom signaling drivers.",
   "author": "Anton Skshidlevsky <meefik@gmail.com>",
   "main": "src/index.js",
@@ -24,12 +24,12 @@
     "dev": "web-dev-server --watch --open /demo/"
   },
   "devDependencies": {
-    "@eslint/js": "^9.37.0",
+    "@eslint/js": "^9.38.0",
     "@rollup/plugin-terser": "^0.4.4",
-    "@stylistic/eslint-plugin": "^5.4.0",
+    "@stylistic/eslint-plugin": "^5.5.0",
     "@web/dev-server": "^0.4.6",
-    "eslint": "^9.37.0",
+    "eslint": "^9.38.0",
     "globals": "^16.4.0",
-    "rollup": "^4.52.4"
+    "rollup": "^4.52.5"
   }
 }
