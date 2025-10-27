@@ -186,8 +186,6 @@ A class creates outgoing PeerConnections, publishes local MediaStream and option
 - `queueSize`: `number` — Maximum number of messages to queue if no channels are connected (10 by default).
 - `audioBitrate`: `number` — Target audio bitrate (kbps).
 - `videoBitrate`: `number` — Target video bitrate (kbps).
-- `audioCodecs`: `Array<string>` — Preferred audio codec lists (in order, for example: `['audio/opus']`).
-- `videoCodecs`: `Array<string>` — Preferred video codec lists (in order, for example: `['video/VP8', 'video/VP9']`).
 
 **Methods**
 

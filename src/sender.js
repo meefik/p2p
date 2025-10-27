@@ -2,7 +2,6 @@ import {
   uuid,
   defaultIceServers,
   setPeerConnectionBitrate,
-  setPreferredCodecs,
 } from './helpers.js';
 
 /**
@@ -23,8 +22,6 @@ import {
  * @param {number} [config.queueSize=10] - Maximum number of messages to queue if no data channels are connected.
  * @param {number} [config.audioBitrate] - Target audio bitrate in kbps.
  * @param {number} [config.videoBitrate] - Target video bitrate in kbps.
- * @param {Array<string>} [config.audioCodecs] - Preferred audio codecs.
- * @param {Array<string>} [config.videoCodecs] - Preferred video codecs.
  *
  * Events emitted (CustomEvent.detail):
  * - 'connect' : { id: string, peer: RTCPeerConnection } // peer connection established
@@ -48,8 +45,6 @@ export class Sender extends EventTarget {
       queueSize = 10,
       audioBitrate,
       videoBitrate,
-      audioCodecs,
-      videoCodecs,
     } = config || {};
     if (!driver) {
       throw new Error('Missing driver');
@@ -61,8 +56,6 @@ export class Sender extends EventTarget {
     this.queueSize = queueSize;
     this.audioBitrate = audioBitrate;
     this.videoBitrate = videoBitrate;
-    this.audioCodecs = audioCodecs;
-    this.videoCodecs = videoCodecs;
     this.connections = new Map();
     this.candidateQueues = new Map();
   }
@@ -158,8 +151,6 @@ export class Sender extends EventTarget {
           if (stream) {
             stream.getTracks().forEach(track => conn.peer.addTrack(track, stream));
             setPeerConnectionBitrate(conn.peer, this.audioBitrate, this.videoBitrate);
-            setPreferredCodecs(conn.peer, this.videoCodecs, 'video');
-            setPreferredCodecs(conn.peer, this.audioCodecs, 'audio');
           }
           if (!stream || dataChannel) {
             conn.channel = conn.peer.createDataChannel(id);

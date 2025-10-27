@@ -17,8 +17,8 @@ const setupConference = async (app) => {
 
   const receiver = new Receiver({ driver });
   const dataSender = new Sender({ driver });
-  const cameraSender = new Sender({ driver });
-  const screenSender = new Sender({ driver });
+  const cameraSender = new Sender({ driver, audioBitrate: 16, videoBitrate: 128 });
+  const screenSender = new Sender({ driver, videoBitrate: 128 });
 
   receiver.addEventListener('stream', (e) => {
     const { id, stream, state } = e.detail;

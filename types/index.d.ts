@@ -12,8 +12,6 @@ export interface SenderConfig {
   queueSize?: number;
   audioBitrate?: number;
   videoBitrate?: number;
-  audioCodecs?: string[];
-  videoCodecs?: string[];
 }
 
 export interface SenderStartOptions {

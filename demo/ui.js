@@ -65,6 +65,7 @@ function createGrid() {
       video.autoplay = true;
       video.muted = muted;
       video.playsInline = true;
+      video.disablePictureInPicture = true;
       video.oncontextmenu = e => e.preventDefault();
       video.onclick = () => {
         if (video.dataset.expanded) {
