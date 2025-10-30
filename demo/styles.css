@@ -288,6 +288,8 @@ body {
   background-color: #888;
   color: inherit;
   cursor: pointer;
+  width: 2.75em;
+  height: 2.75em;
 }
 
 .toolbar button:hover {
