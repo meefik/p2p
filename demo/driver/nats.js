@@ -2,6 +2,14 @@ import { connect, StringCodec } from 'https://esm.sh/nats.ws';
 
 const sc = StringCodec();
 
+const sha256 = async (msg) => {
+  const data = new TextEncoder().encode(msg);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+};
+
 const createEncryptionKey = async (secret) => {
   const secretHash = await crypto.subtle.digest(
     'SHA-256',
@@ -51,8 +59,8 @@ export class NatsDriver extends Map {
     await this.nc.drain();
   }
 
-  on(namespace, handler) {
-    const ns = namespace.join(':');
+  async on(namespace, handler) {
+    const ns = await sha256(namespace.join(':'));
     const sub = this.nc.subscribe(ns, {
       callback: async (err, msg) => {
         if (err) {
@@ -73,8 +81,8 @@ export class NatsDriver extends Map {
     this.get(ns).set(handler, sub);
   }
 
-  off(namespace, handler) {
-    const ns = namespace.join(':');
+  async off(namespace, handler) {
+    const ns = await sha256(namespace.join(':'));
     const sub = this.get(ns)?.get(handler);
     if (sub) {
       sub.unsubscribe();
@@ -86,7 +94,7 @@ export class NatsDriver extends Map {
   }
 
   async emit(namespace, message) {
-    const ns = namespace.join(':');
+    const ns = await sha256(namespace.join(':'));
     if (this.nc) {
       let data = sc.encode(JSON.stringify(message));
       if (this.cryptoKey) {

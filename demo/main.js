@@ -49,7 +49,7 @@ const setupConference = async (app) => {
     app.updateItem(id, { audio, video });
   });
 
-  await driver.open(location.href);
+  await driver.open(app.dataset.room);
 
   receiver.start({ room: app.dataset.room });
   dataSender.start({
