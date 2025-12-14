@@ -6,6 +6,8 @@ body {
   height: 100%;
   font-family: Arial, sans-serif;
   font-size: 16px;
+  color: #ccc;
+  background-color: #333;
 }
 
 .container {
@@ -14,8 +16,6 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  color: #ccc;
-  background-color: #333;
   line-height: 1em;
 }
 
@@ -400,6 +400,45 @@ body {
   font-weight: bold;
   font-size: small;
   z-index: 1000;
+}
+
+/* Fork me on GitHub */
+.github-forkme {
+  width: 12em;
+  height: 12em;
+  position: fixed;
+  overflow: hidden;
+  right: auto;
+  left: 0;
+  bottom: 0;
+  z-index: 999;
+  pointer-events: none;
+  font-size: 12px;
+  text-decoration: none;
+  text-indent: -999999px;
+}
+
+.github-forkme::after {
+  content: attr(data-text);
+  display: block;
+  position: absolute;
+  width: 14em;
+  color: #fff;
+  font-weight: bold;
+  line-height: 1.5em;
+  text-decoration: none;
+  text-shadow: 0 -1px rgba(0, 0, 0, .5);
+  text-align: center;
+  text-indent: 0;
+  padding: .15em;
+  top: 7em;
+  left: -3em;
+  border: 2px dashed #aaa;
+  outline: 2px solid #a00;
+  transform: rotate(45deg);
+  background-image: linear-gradient(to bottom, #a00, #c00, #a00);
+  box-shadow: 0 4px 4px 0 rgba(0, 0, 0, .5);
+  pointer-events: auto;
 }
 
 /* Common */

@@ -292,7 +292,7 @@ function createChat({ toolbar, onMessage }) {
   return chat;
 }
 
-function createDialog({ nickname, driver, onSubmit }) {
+function createJoinDialog({ driversList, nickname, driver, onSubmit }) {
   const dialog = document.createElement('form');
   dialog.className = 'dialog';
 
@@ -306,22 +306,21 @@ function createDialog({ nickname, driver, onSubmit }) {
   label1.appendChild(nicknameInput);
   container.appendChild(label1);
 
-  const label2 = document.createElement('label');
-  label2.textContent = 'Signaling driver:';
-  const driverSelect = document.createElement('select');
-  driverSelect.name = 'driver';
-  const option1 = document.createElement('option');
-  option1.value = 'local';
-  option1.selected = driver === 'local';
-  option1.textContent = 'LocalStorage';
-  driverSelect.appendChild(option1);
-  const option2 = document.createElement('option');
-  option2.value = 'nats';
-  option2.selected = driver === 'nats';
-  option2.textContent = 'NATS';
-  driverSelect.appendChild(option2);
-  label2.appendChild(driverSelect);
-  container.appendChild(label2);
+  if (driversList?.length > 1) {
+    const label = document.createElement('label');
+    label.textContent = 'Signaling driver:';
+    const driverSelect = document.createElement('select');
+    driverSelect.name = 'driver';
+    for (const drv of driversList) {
+      const option = document.createElement('option');
+      option.value = drv;
+      option.selected = driver === drv;
+      option.textContent = drv;
+      driverSelect.appendChild(option);
+    }
+    label.appendChild(driverSelect);
+    container.appendChild(label);
+  }
 
   const button = document.createElement('button');
   button.textContent = 'JOIN';
@@ -329,12 +328,19 @@ function createDialog({ nickname, driver, onSubmit }) {
   container.appendChild(button);
   dialog.appendChild(container);
 
+  const link = document.createElement('a');
+  link.className = 'github-forkme';
+  link.href = 'https://github.com/meefik/p2p';
+  link.target = '_blank';
+  link.dataset.text = 'Fork me on GitHub';
+  dialog.appendChild(link);
+
   dialog.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(dialog);
     const nickname = fd.get('nickname');
     const driver = fd.get('driver');
-    if (!nickname || !driver) return;
+    if (!nickname) return;
     button.disabled = true;
     try {
       await onSubmit({ nickname, driver });
@@ -347,7 +353,7 @@ function createDialog({ nickname, driver, onSubmit }) {
   return dialog;
 }
 
-export function createApp({ onMicrophone, onCamera, onScreen, onMessage, onJoin } = {}) {
+export function createApp({ driversList, onMicrophone, onCamera, onScreen, onMessage, onJoin } = {}) {
   const container = document.createElement('div');
   container.className = 'container';
 
@@ -367,11 +373,15 @@ export function createApp({ onMicrophone, onCamera, onScreen, onMessage, onJoin 
     onMessage,
   });
 
-  const dialog = createDialog({
+  const dialog = createJoinDialog({
+    driversList,
     nickname: localStorage.getItem('nickname') || 'Guest',
-    driver: localStorage.getItem('driver') || 'local',
+    driver: localStorage.getItem('driver') || driversList[0],
     onSubmit: async ({ driver, nickname }) => {
       localStorage.setItem('nickname', nickname);
+      if (!driversList.includes(driver)) {
+        driver = driversList[0];
+      }
       localStorage.setItem('driver', driver);
 
       container.appendChild(grid);

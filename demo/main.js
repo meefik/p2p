@@ -3,6 +3,8 @@ import { LocalDriver } from './driver/local.js';
 import { NatsDriver } from './driver/nats.js';
 import { createApp } from './ui.js';
 
+const DRIVERS_LIST = ['local', 'nats'];
+
 const setupConference = async (app) => {
   let driver;
   if (app.dataset.driver === 'local') {
@@ -12,7 +14,7 @@ const setupConference = async (app) => {
     driver = new NatsDriver();
   }
   else {
-    throw new Error(`Unknown method: ${app.dataset.driver}`);
+    throw new Error(`Unknown driver: ${app.dataset.driver}`);
   }
 
   const receiver = new Receiver({ driver });
@@ -153,6 +155,7 @@ const captureScreen = async (options) => {
 let senders, cameraStream, screenStream;
 
 const app = createApp({
+  driversList: DRIVERS_LIST,
   async onJoin(app) {
     senders = await setupConference(app);
   },
