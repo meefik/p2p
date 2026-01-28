@@ -1,6 +1,4 @@
 import { Sender, Receiver } from '../src/index.js';
-import { LocalDriver } from './driver/local.js';
-import { NatsDriver } from './driver/nats.js';
 import { createApp } from './ui.js';
 
 const DRIVERS_LIST = ['local', 'nats'];
@@ -8,9 +6,11 @@ const DRIVERS_LIST = ['local', 'nats'];
 const setupConference = async (app) => {
   let driver;
   if (app.dataset.driver === 'local') {
+    const { LocalDriver } = await import('./driver/local.js');
     driver = new LocalDriver();
   }
   else if (app.dataset.driver === 'nats') {
+    const { NatsDriver } = await import ('./driver/nats.js');
     driver = new NatsDriver();
   }
   else {
@@ -22,16 +22,30 @@ const setupConference = async (app) => {
   const cameraSender = new Sender({ driver, audioBitrate: 16, videoBitrate: 128 });
   const screenSender = new Sender({ driver, videoBitrate: 128 });
 
-  receiver.addEventListener('stream', (e) => {
-    const { id, stream, state } = e.detail;
-    const { nickname = 'Guest', pid, audio, video, source } = state || {};
-    app.appendItem(id, pid, { stream, source, nickname, audioEnabled: audio, videoEnabled: video });
+  receiver.addEventListener('connect', (e) => {
+    const { id, metadata } = e.detail;
+    const { nickname, pid } = metadata || {};
+    if (nickname && pid) {
+      app.appendItem(id, pid, { nickname });
+    }
   });
 
-  receiver.addEventListener('channel', (e) => {
-    const { id, state } = e.detail;
-    const { nickname = 'Guest', pid } = state || {};
-    app.appendItem(id, pid, { nickname });
+  receiver.addEventListener('stream', (e) => {
+    const { id, stream, metadata } = e.detail;
+    const { pid, audio, video, source } = metadata || {};
+    app.appendItem(id, pid, { stream, source, audio, video });
+  });
+
+  receiver.addEventListener('channel:message', (e) => {
+    const { id, data, channel } = e.detail;
+    if (channel.label === 'camera') {
+      const { audio, video } = JSON.parse(data);
+      app.updateItem(id, { audio, video });
+    }
+    else if (channel.label === 'chat') {
+      const { nickname = 'Guest', message } = JSON.parse(data);
+      app.appendMessage(message, nickname);
+    }
   });
 
   receiver.addEventListener('dispose', (e) => {
@@ -39,24 +53,16 @@ const setupConference = async (app) => {
     app.removeItem(id);
   });
 
-  receiver.addEventListener('message', (e) => {
-    const { message, state } = e.detail;
-    const { nickname = 'Guest' } = state || {};
-    app.appendMessage(message, nickname);
-  });
-
-  receiver.addEventListener('sync', (e) => {
-    const { id, state } = e.detail;
-    const { audio, video } = state || {};
-    app.updateItem(id, { audio, video });
-  });
-
   await driver.open(app.dataset.room);
 
   receiver.start({ room: app.dataset.room });
+
   dataSender.start({
     room: app.dataset.room,
-    state: { nickname: app.dataset.nickname, pid: app.dataset.id },
+    channels: {
+      chat: { ordered: true },
+    },
+    metadata: { pid: app.dataset.id, nickname: app.dataset.nickname },
   });
 
   app.appendItem(dataSender.id, app.dataset.id, { nickname: app.dataset.nickname });
@@ -80,18 +86,32 @@ const captureCamera = async (options) => {
     });
     stream.getAudioTracks().forEach(track => (track.enabled = !!audioEnabled));
     stream.getVideoTracks().forEach(track => (track.enabled = !!videoEnabled));
+    const isAudioEnabled = () => stream.getAudioTracks().some(track => track.enabled);
+    const isVideoEnabled = () => stream.getVideoTracks().some(track => track.enabled);
     sender.start({
       stream,
       room: app.dataset.room,
-      state: { pid: app.dataset.id, source: 'camera', audio: !!audioEnabled, video: !!videoEnabled },
+      channels: {
+        camera: true,
+      },
+      metadata: {
+        pid: app.dataset.id,
+        source: 'camera',
+        get audio() {
+          return isAudioEnabled();
+        },
+        get video() {
+          return isVideoEnabled();
+        },
+      },
     });
     app.appendItem(sender.id, app.dataset.id, {
       stream,
       source: 'camera',
       muted: true,
       mirror: true,
-      audioEnabled: !!audioEnabled,
-      videoEnabled: !!videoEnabled,
+      audio: !!audioEnabled,
+      video: !!videoEnabled,
     });
     return stream;
   }
@@ -111,7 +131,13 @@ const captureCamera = async (options) => {
       return null;
     }
     else {
-      sender.sync({ audio: isAudioEnabled, video: isVideoEnabled }, true);
+      sender.connections.forEach((conn) => {
+        const channel = conn.channels.get('camera');
+        if (channel && channel.readyState === 'open') {
+          const state = { audio: isAudioEnabled, video: isVideoEnabled };
+          channel.send(JSON.stringify(state));
+        }
+      });
       app.updateItem(sender.id, { audio: isAudioEnabled, video: isVideoEnabled });
       return stream;
     }
@@ -134,13 +160,13 @@ const captureScreen = async (options) => {
     sender.start({
       stream,
       room: app.dataset.room,
-      state: { pid: app.dataset.id, source: 'screen', video: true },
+      metadata: { pid: app.dataset.id, source: 'screen', video: true },
     });
     app.appendItem(sender.id, app.dataset.id, {
       stream,
       source: 'screen',
       muted: true,
-      videoEnabled: true,
+      video: true,
     });
     return stream;
   }
@@ -187,7 +213,15 @@ const app = createApp({
     screenStream = stream;
   },
   async onMessage(message) {
-    senders.dataSender.send(message);
+    senders.dataSender.connections.forEach((conn) => {
+      const channel = conn.channels.get('chat');
+      if (channel && channel.readyState === 'open') {
+        channel.send(JSON.stringify({
+          nickname: app.dataset.nickname,
+          message,
+        }));
+      }
+    });
   },
 });
 

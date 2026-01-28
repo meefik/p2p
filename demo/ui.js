@@ -49,8 +49,8 @@ function createGrid() {
       muted = false,
       mirror = false,
       nickname,
-      audioEnabled,
-      videoEnabled,
+      audio,
+      video,
     } = options || {};
 
     const parent = grid.querySelector(`div[data-id="${pid}"]`) || document.createElement('div');
@@ -58,43 +58,44 @@ function createGrid() {
     if (nickname) {
       parent.dataset.name = nickname;
     }
+    parent.querySelectorAll(`div[data-id="${id}"]`).forEach(el => el.remove());
 
     if (stream) {
-      const video = parent.querySelector(`video[data-id="${id}"]`) || document.createElement('video');
-      video.dataset.id = id;
-      video.autoplay = true;
-      video.muted = muted;
-      video.playsInline = true;
-      video.disablePictureInPicture = true;
-      video.oncontextmenu = e => e.preventDefault();
-      video.onclick = () => {
-        if (video.dataset.expanded) {
-          delete video.dataset.expanded;
+      const el = parent.querySelector(`video[data-id="${id}"]`) || document.createElement('video');
+      el.dataset.id = id;
+      el.autoplay = true;
+      el.muted = muted;
+      el.playsInline = true;
+      el.disablePictureInPicture = true;
+      el.oncontextmenu = e => e.preventDefault();
+      el.onclick = () => {
+        if (el.dataset.expanded) {
+          delete el.dataset.expanded;
         }
         else {
-          video.dataset.expanded = 'true';
+          el.dataset.expanded = 'true';
         }
       };
-      if (source) video.dataset.source = source;
-      if (mirror) video.dataset.mirror = true;
-      if (typeof audioEnabled === 'boolean') {
-        video.dataset.audio = audioEnabled;
+      if (source) el.dataset.source = source;
+      if (mirror) el.dataset.mirror = true;
+      if (typeof audio === 'boolean') {
+        el.dataset.audio = audio;
       }
-      if (typeof videoEnabled === 'boolean') {
-        video.dataset.video = videoEnabled;
+      if (typeof video === 'boolean') {
+        el.dataset.video = video;
       }
 
-      parent.appendChild(video);
-      video.srcObject = stream;
-      video.play();
+      parent.appendChild(el);
+      el.srcObject = stream;
+      el.play();
     }
-    else {
-      const stub = parent.querySelector(`div[data-id="${id}"]`) || document.createElement('div');
+    else if (!parent.querySelector(`[data-id="${id}"]`)) {
+      const stub = document.createElement('div');
       stub.dataset.id = id;
       parent.appendChild(stub);
     }
 
-    grid.appendChild(parent);
+    grid.contains(parent) || grid.appendChild(parent);
     grid.resize();
   };
 

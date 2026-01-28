@@ -1,241 +1,147 @@
 # p2p
 
-A lightweight library for creating peer-to-peer WebRTC conferencing with custom signaling drivers.
+A tiny, signaling-agnostic library for building peer-to-peer WebRTC conferencing (media + data channels) with pluggable signaling drivers.
 
-## Overview
+Key ideas:
+- **Sender**: creates outgoing RTCPeerConnections, publishes a local MediaStream, and optionally opens data channels to receivers.
+- **Receiver**: listens for offers, answers them, and exposes remote MediaStreams and incoming data messages.
+- **Signaling driver**: any object implementing `on(namespace, handler)`, `off(namespace, handler)` and `emit(namespace, message)`. This keeps the library transport-agnostic (WebSocket, pub/sub, in-memory, etc).
 
-The library provides two small building blocks:
+Why use p2p:
+- Minimal footprint and API surface for broadcasting a local stream and exchanging data.
+- Easy to test locally with an in-memory driver; swap to WebSocket or other drivers for production.
+- Handles ICE, offer/answer exchange, candidate buffering, and per-peer data channels.
 
-- `Sender` — creates outgoing PeerConnections, publishes local MediaStream and optional DataChannels, and sends offers to remote receivers through a signaling driver.
-- `Receiver` — listens for offers, answers them, and exposes remote streams and incoming data messages.
+## Quickstart
 
-The library is signaling-agnostic: you must provide a driver with `on(namespace, handler)`, `off(namespace, handler)` and `emit(namespace, data)` semantics. This allows usage with WebSocket, Pub/Sub services (such as NATS), server-side event buses, or a simple in-memory driver for prototypes.
-
-## How to use
-
-Install the module:
-
+Install:
 ```sh
 npm install p2p
 ```
 
-Run demo/watch:
-
+Run the demo (clone the repo if needed):
 ```sh
 npm run dev
 ```
 
-Open <http://localhost:8000/demo/> in two browser tabs to see it in action.
+Open <http://localhost:8000/demo/> in two browser tabs to see a simple video chat demo.
 
 [![DEMO](https://img.youtube.com/vi/2W9C71-L8AE/0.jpg)](https://www.youtube.com/watch?v=2W9C71-L8AE)
 
-## Usage summary
+## Basic usage
 
-- Provide a signaling driver (see example below).
-- Create and start a Sender if you want to broadcast a local MediaStream.
-- Create and start a Receiver to discover and accept remote streams.
-- Listen to events on Sender/Receiver to react to connections, errors, remote streams, and data messages.
-
-## Signaling driver example (in-memory)
-
-This tiny driver is useful for local testing and examples. Replace it with your WebSocket or other signaling implementation in real apps.
-
-```javascript
+Minimal in-memory signaling driver (useful for local testing):
+```js
 // Minimal in-memory pub/sub driver
 class MemoryDriver extends Map {
-  constructor() {
-    super();
-  }
+  constructor() { super(); }
   on(namespace, handler) {
     const k = namespace.join(':');
-    if (!this.has(k)) {
-      this.set(k, new Set());
-    }
+    if (!this.has(k)) this.set(k, new Set());
     this.get(k).add(handler);
   }
   off(namespace, handler) {
     const k = namespace.join(':');
     this.get(k)?.delete(handler);
   }
-  emit(namespace, data) {
+  emit(namespace, message) {
     const k = namespace.join(':');
-    if (this.has(k)) {
-      for (const h of this.get(k)) {
-        try { h(data); } catch (e) { /* swallow */ }
-      }
+    if (!this.has(k)) return;
+    for (const h of this.get(k)) {
+      try { h(message); } catch (e) { /* swallow errors */ }
     }
   }
 }
 ```
 
-## Receiving streams and messages
+Signaling namespaces (contract)
+- Sender listens on: `['sender', room]` and `['sender', room, senderId]`
+- Sender emits to: `['receiver', room]` and `['receiver', room, receiverId]`
+- Receiver listens on: `['receiver', room]` and `['receiver', room, receiverId]`
+- Receiver emits to: `['sender', room]` and `['sender', room, senderId]`
 
-Receiver listens for senders in a room and will respond to offers. It emits 'stream' when remote media arrives and 'message' for data channel messages.
+Message types
+- `invoke` — discovery / request to connect (contains id, optional credentials)
+- `offer` — sender -> receiver with SDP offer and state
+- `answer` — receiver -> sender with SDP answer
+- `candidate` — ICE candidate exchange
+- `dispose` — end/tear-down
 
-```javascript
+Receiver — listen for senders and attach incoming streams:
+```js
 import { Receiver } from 'p2p';
 
 const driver = new MemoryDriver();
 const receiver = new Receiver({ driver });
 
 receiver.addEventListener('stream', (e) => {
-  const { id, stream } = e.detail;
-  console.log('stream received', id);
-
-  // attach to a video element
+  const { id, stream, state } = e.detail;
   const video = document.createElement('video');
   video.autoplay = true;
   video.srcObject = stream;
+  video.dataset.muted = state.muted;
   document.body.appendChild(video);
 });
 
-receiver.addEventListener('channel', (e) => {
-  const { id } = e.detail;
-  console.log('data channel opened', id);
+receiver.addEventListener('channel:message', (e) => {
+  const { id, data } = e.detail;
+  console.log('msg from', id, data);
 });
 
-receiver.addEventListener('message', (e) => {
-  const { id, message } = e.detail;
-  console.log('message received', id, message);
-});
-
-receiver.addEventListener('dispose', (e) => {
-  const { id, error } = e.detail;
-  console.log('peer disposed', id, error);
-});
-
-// start listening in the same room as the sender
 receiver.start({ room: 'demo-room' });
-
-// stop when done
 // receiver.stop();
 ```
 
-## Broadcasting webcam and sending messages
-
-Sender sends an offer to receivers in a room and publishes your local stream.
-
-```javascript
+Sender — capture local media, broadcast, and send messages:
+```js
 import { Sender } from 'p2p';
 
-// create sender
+const driver = new MemoryDriver();
 const sender = new Sender({ driver });
 
 sender.addEventListener('connect', (e) => {
   const { id } = e.detail;
   console.log('peer connected', id);
-  // send text data to the connected receiver
-  sender.send('Hello from sender!', id);
+  sender.send('hello', { peer: id, channel: 'chat' });
 });
 
-// prepare local stream (browser)
-navigator.mediaDevices.getUserMedia({
-  audio: true,
-  video: true
-}).then((stream) => {
-  // start sender, provide local stream and room name
-  sender.start({
-    stream,
-    room: 'demo-room',
-    dataChannel: true, // create data channels for each receiver
+navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+  .then((stream) => {
+    sender.start({
+      room: 'demo-room',
+      stream,
+      state: { muted: false },
+      channels: { chat: { ordered: true } },
+    });
   });
-});
-
-// to stop and close everything
-// sender.stop();
 ```
 
-## API details
+## API summary
 
-### Driver
+Sender:
+- constructor(config: { driver, iceServers?, verify?, connectionTimeout?, audioBitrate?, videoBitrate? })
+- start({ room?, stream?, metadata?, channels? })
+- stop()
 
-A class or object that implements the pub/sub signaling protocol.
+Events: `connect`, `dispose`, `error`, `channel:open`, `channel:close`, `channel:error`, `channel:message`
 
-**Methods**
+Receiver:
+- constructor(config: { driver, iceServers?, connectionTimeout?, pingInterval?, pingAttempts? })
+- start({ room?, credentials? })
+- stop()
 
-- `on(namespace: Array<string>, handler: (message: any) => void): void` — Subscribe a handler to the specified namespace; the handler will be called with the message payload when messages are emitted to that namespace.
-- `off(namespace: Array<string>, handler: (message: any) => void): void` — Unsubscribe a previously registered handler from the given namespace so it no longer receives messages.
-- `emit(namespace: Array<string>, message: any): void` — Publish a message to the specified namespace; all handlers subscribed to that namespace will be called with the message payload.
+Events: `stream`, `connect`, `dispose`, `channel:open`, `channel:close`, `channel:error`, `channel:message`
 
-**Signaling expectations**
+## Troubleshooting & tips
 
-Namespaces used by the library:
-- Sender listens on: `['sender', room]` and `['sender', room, senderId]`
-- Sender emits to: `['receiver', room]` and `['receiver', room, receiverId]`
-- Receiver listens on: `['receiver', room]` and `['receiver', room, receiverId]`
-- Receiver emits to: `['sender', room]` and `['sender', room, senderId]`
+- Browser permissions: getUserMedia requires secure context (https or localhost) and user consent.
+- TURN servers: include TURN servers in iceServers for reliable connectivity across NATs.
+- Candidate buffering: the library buffers ICE candidates received before a connection is created.
+- Bitrate and codec hints: the library sets preferred codecs and bitrate where supported; browsers may ignore hints.
+- Debugging: use browser WebRTC internals and ICE/state events to diagnose connectivity issues.
 
-Messages include type fields:
-- `invoke` — request to connect (id only)
-- `offer` — sender -> receiver with SDP offer and metadata
-- `answer` — receiver -> sender with SDP answer
-- `candidate` — ICE candidate exchange
-- `sync` — state sync (such as audio/video enabled)
-- `dispose` — tear down
+## Security & verification
 
-### Sender
-
-A class creates outgoing PeerConnections, publishes local MediaStream and optional DataChannels, and sends offers to remote receivers through a signaling driver.
-
-**Constructor**
-
-- `driver`: `object` — Signaling driver implementing `on(namespace, handler)`, `off(namespace, handler)`, `emit(namespace, message)`.
-- `iceServers`: `Array<RTCIceServer>` — RTCPeerConnection `iceServers` for NAT traversal.
-- `verify`: `(id: string, credentials: any) => boolean` — Optional function to verify incoming connection requests; should return `true` to accept or `false` to reject.
-- `connectionTimeout`: `number` — Time in seconds to wait for PeerConnection to connect (30 by default).
-- `queueSize`: `number` — Maximum number of messages to queue if no channels are connected (10 by default).
-- `audioBitrate`: `number` — Target audio bitrate (kbps).
-- `videoBitrate`: `number` — Target video bitrate (kbps).
-
-**Methods**
-
-- `start(options: object): void` — Begin broadcasting. Options:
-  - `stream: MediaStream` — Local media to publish.
-  - `room: string` — Room name to signal into (`default` if omitted).
-  - `state: object` — Arbitrary state sent with the offer.
-  - `dataChannel: boolean` — Create per-peer data channels when `true` (or when no `stream`).
-- `stop(): void` — Close all peer connections, data channels, and stop broadcasting.
-- `send(data: any, id?: string): void` — Send `data` over all open data channels to connected receivers.
-- `sync(state: object, merge?: boolean): void` — Update and send `state` to all connected receivers.
-
-**Events**
-
-- `connect`: `{ id: string, peer: RTCPeerConnection }` — Peer connection established.
-- `dispose`: `{ id: string, peer: RTCPeerConnection, error?: Error }` — Peer connection closed.
-- `error`: `{ id: string, error: Error }` — Non-fatal error occurred.
-
-### Receiver
-
-A class listens for offers, answers them, and exposes remote streams and incoming data messages.
-
-**Constructor**
-
-- `driver`: `object` — Signaling driver with `on/off/emit`.
-- `iceServers`: `Array<RTCIceServer>` — Configuration of STUN or TURN servers.
-- `connectionTimeout`: `number` — Time in seconds to wait for PeerConnection to connect (30 by default).
-- `pingInterval`: `number` — Ping interval in seconds to re-establish connections (30 by default).
-- `pingAttempts`: `number` — Number of ping attempts after all peers are gone. (10 by default).
-
-**Methods**
-
-- `start(options: object): void` — Begin listening for senders in `room` and respond to offers.
-  - `room: string` — Room name to signal into (`default` if omitted).
-  - `credentials: any` — Optional credentials to identify/authorize the receiver.
-- `stop(): void` — Close peers and stop listening.
-
-**Events**
-
-- `stream`: `{ id: string, stream: MediaStream, state: object }` — Remote MediaStream received from peer `id`.
-- `message`: `{ id: string, message: any, state: object }` — Data channel message from peer `id`.
-- `channel`: `{ id: string, channel: RTCDataChannel, state: object }` — Data channel established with peer `id`.
-- `sync`: `{ id: string, state: object }` — Remote state changed (such as audio/video enabled).
-- `connect`:  `{ id: string, peer: RTCPeerConnection, state: object }` — Peer connection established.
-- `dispose`: `{ id: string, peer: RTCPeerConnection, state: object, error?: Error }` — Peer connection closed.
-- `error`: `{ id: string, error: Error }` — Non-fatal error occurred.
-
-## Notes and tips
-
-- For production, plug the driver to a server-backed signaling channel (WebSocket).
-- Provide TURN servers in iceServers for NAT traversal in real-world deployments.
-- The library sets preferred codecs and bitrate where supported — these are hints and may be ignored by browsers.
-- Data channels are created per-peer and named by peer id.
+- Sender supports an optional verify(id, credentials) callback to accept/reject incoming invocations.
+- If you need authentication/authorization, implement it in your signaling layer and/or verify callback.
+- Always use secure signaling channels (e.g., WSS) to protect exchanged SDP and ICE candidates.

@@ -3,10 +3,12 @@ export class LocalDriver extends Map {
     super();
     this._storageEventHandler = (e) => {
       const { key, newValue } = e;
-      const data = JSON.parse(newValue);
-      if (this.has(key)) {
-        for (const handler of this.get(key)) {
-          handler(data);
+      if (key.startsWith('receiver:') || key.startsWith('sender:')) {
+        const data = JSON.parse(newValue);
+        if (this.has(key)) {
+          for (const handler of this.get(key)) {
+            handler(data);
+          }
         }
       }
     };

@@ -5,36 +5,34 @@ import {
 } from './helpers.js';
 
 /**
- * Sender manages outgoing WebRTC PeerConnections and optional data channels
- * to one or more receivers. It handles creating offers, applying local media
- * tracks, exchanging ICE candidates through the provided signaling driver,
- * and exposing simple controls for enabling/disabling audio/video and
- * sending data over opened data channels.
+ * Manages outgoing WebRTC RTCPeerConnections and optional RTCDataChannels to
+ * one or more receivers. Responsible for creating offers, attaching local
+ * media tracks, exchanging ICE candidates via the signaling driver, and
+ * emitting lifecycle and channel events.
  *
- * @class Sender
  * @extends {EventTarget}
  *
- * @param {Object} config - Configuration object.
- * @param {Object} config.driver - Signaling driver (required) used to receive and send messages.
- * @param {Array<RTCIceServer>} [config.iceServers] - STUN/TURN servers to use for RTCPeerConnection.
- * @param {Function} [config.verify] - Optional async function to verify incoming connection requests.
- * @param {number} [config.connectionTimeout=30] - Connection timeout in seconds.
- * @param {number} [config.queueSize=10] - Maximum number of messages to queue if no data channels are connected.
- * @param {number} [config.audioBitrate] - Target audio bitrate in kbps.
- * @param {number} [config.videoBitrate] - Target video bitrate in kbps.
- *
- * Events emitted (CustomEvent.detail):
- * - 'connect' : { id: string, peer: RTCPeerConnection } // peer connection established
- * - 'dispose' : { id: string, error?: Error } // peer disposed
- * - 'error'   : { id: string, error: Error } // non-fatal error occurred
- *
- * Public methods:
- * - start(options)     : Begin listening for signaling; options.room can be provided.
- * - stop()             : Stop listening and close all connections.
- * - send(data, id)     : Send data via data channel (all connected peers or specific peer).
- * - sync(state, merge) : Update sender state and notify all connected peers.
+ * @fires Sender#connect Emitted when a peer connection is established.
+ * @fires Sender#dispose Emitted when a peer connection is closed.
+ * @fires Sender#error Emitted when an error occurs.
+ * @fires Sender#channel:open Emitted when a data channel is opened.
+ * @fires Sender#channel:close Emitted when a data channel is closed.
+ * @fires Sender#channel:error Emitted when a data channel error occurs.
+ * @fires Sender#channel:message Emitted when a message is received on a data channel.
  */
 export class Sender extends EventTarget {
+  /**
+   * Creates an instance of Sender.
+   *
+   * @param {Object} config Configuration options.
+   * @param {Object} config.driver Signaling driver (required).
+   * @param {RTCIceServer[]} [config.iceServers] STUN/TURN servers to use for RTCPeerConnection.
+   * @param {Function} [config.verify] Optional async function to verify incoming connection requests.
+   * @param {number} [config.connectionTimeout=30] Connection timeout in seconds.
+   * @param {number} [config.audioBitrate] Target audio bitrate in kbps.
+   * @param {number} [config.videoBitrate] Target video bitrate in kbps.
+   * @throws {Error} If the driver is not provided.
+   */
   constructor(config) {
     super();
     const {
@@ -42,7 +40,6 @@ export class Sender extends EventTarget {
       iceServers = defaultIceServers,
       verify,
       connectionTimeout = 30,
-      queueSize = 10,
       audioBitrate,
       videoBitrate,
     } = config || {};
@@ -53,30 +50,44 @@ export class Sender extends EventTarget {
     this.iceServers = iceServers;
     this.verify = verify;
     this.connectionTimeout = connectionTimeout;
-    this.queueSize = queueSize;
     this.audioBitrate = audioBitrate;
     this.videoBitrate = videoBitrate;
     this.connections = new Map();
     this.candidateQueues = new Map();
   }
 
+  /**
+   * Indicates whether the Sender is currently active.
+   *
+   * @returns {boolean} True if the Sender is started, false otherwise.
+   * @readonly
+   */
   get active() {
     return !!this._handler;
   }
 
+  /**
+   * Start the Sender to listen for incoming connection requests.
+   *
+   * @param {SenderStartOptions} options Options for starting the Sender.
+   * @param {string} [options.room='default'] Room name to join.
+   * @param {MediaStream} [options.stream] MediaStream to send to receivers.
+   * @param {any} [options.metadata] Metadata to share with receivers.
+   * @param {object} [options.channels] Data channel labels and options to create per-peer data channels.
+   * @returns {void}
+   */
   start(options) {
     if (this._handler) return;
 
     const {
-      stream,
       room,
-      state,
-      dataChannel,
+      stream,
+      metadata,
+      channels,
     } = options || {};
 
     this.id = stream?.id || uuid();
     this.room = room || 'default';
-    this.state = state || {};
 
     this._handler = async (e) => {
       const { type, id, candidate, answer, credentials } = e;
@@ -99,20 +110,19 @@ export class Sender extends EventTarget {
               clearTimeout(timeout);
               this.connections.delete(id);
 
-              conn.channel?.close();
+              conn.channels?.forEach(channel => channel?.close());
               conn.peer?.close();
 
               this.driver.emit(['receiver', this.room, id], {
                 type: 'dispose',
                 id: this.id,
-                state: this.state,
               });
 
               this.dispatchEvent(new CustomEvent('dispose', {
                 detail: { id, peer: conn.peer, error },
               }));
             },
-            queue: [],
+            channels: new Map(),
           };
           this.connections.set(id, conn);
 
@@ -152,15 +162,44 @@ export class Sender extends EventTarget {
             stream.getTracks().forEach(track => conn.peer.addTrack(track, stream));
             setPeerConnectionBitrate(conn.peer, this.audioBitrate, this.videoBitrate);
           }
-          if (!stream || dataChannel) {
-            conn.channel = conn.peer.createDataChannel(id);
-            conn.channel.addEventListener('open', () => {
-              // flush queued messages
-              while (conn.queue.length) {
-                const data = conn.queue.shift();
-                conn.channel.send(data);
-              }
-            }, { once: true });
+
+          if (channels) {
+            for (let channelLabel in channels) {
+              if (conn.channels.has(channelLabel)) continue;
+
+              let options = channels[channelLabel];
+              if (!options) continue;
+              if (typeof options !== 'object') options = {};
+
+              const dataChannel = conn.peer.createDataChannel(channelLabel, options);
+              conn.channels.set(channelLabel, dataChannel);
+
+              dataChannel.addEventListener('open', () => {
+                this.dispatchEvent(new CustomEvent('channel:open', {
+                  detail: { id, peer: conn.peer, channel: dataChannel },
+                }));
+              }, { once: true });
+
+              dataChannel.addEventListener('close', () => {
+                this.dispatchEvent(new CustomEvent('channel:close', {
+                  detail: { id, peer: conn.peer, channel: dataChannel },
+                }));
+              }, { once: true });
+
+              dataChannel.addEventListener('error', (e) => {
+                const { error } = e;
+                this.dispatchEvent(new CustomEvent('channel:error', {
+                  detail: { id, peer: conn.peer, channel: dataChannel, error },
+                }));
+              });
+
+              dataChannel.addEventListener('message', (e) => {
+                const { data } = e;
+                this.dispatchEvent(new CustomEvent('channel:message', {
+                  detail: { id, peer: conn.peer, channel: dataChannel, data },
+                }));
+              });
+            }
           }
 
           const offer = await conn.peer.createOffer({
@@ -176,13 +215,15 @@ export class Sender extends EventTarget {
             type: 'offer',
             id: this.id,
             offer,
-            state: this.state,
+            metadata,
           });
         }
         catch (error) {
           const conn = this.connections.get(id);
           if (conn) conn.dispose(error);
-          else this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+          else this.dispatchEvent(new CustomEvent('error', {
+            detail: { id, error },
+          }));
         }
 
         return;
@@ -203,12 +244,14 @@ export class Sender extends EventTarget {
 
         // add queued candidates
         if (this.candidateQueues.has(id)) {
-          for (const candidate of this.candidateQueues.get(id)) {
+          for (let candidate of this.candidateQueues.get(id)) {
             try {
               await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
             }
             catch (error) {
-              this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+              this.dispatchEvent(new CustomEvent('error', {
+                detail: { id, error },
+              }));
             }
           }
           this.candidateQueues.delete(id);
@@ -231,7 +274,9 @@ export class Sender extends EventTarget {
           await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
         }
         catch (error) {
-          this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+          this.dispatchEvent(new CustomEvent('error', {
+            detail: { id, error },
+          }));
         }
 
         return;
@@ -247,13 +292,18 @@ export class Sender extends EventTarget {
     });
   }
 
+  /**
+   * Stop the Sender and close all connections and data channels.
+   *
+   * @returns {void}
+   */
   stop() {
     if (!this._handler) return;
 
     this.driver.off(['sender', this.room], this._handler);
     this.driver.off(['sender', this.room, this.id], this._handler);
 
-    for (const conn of this.connections.values()) {
+    for (let conn of this.connections.values()) {
       conn.dispose();
     }
 
@@ -261,43 +311,5 @@ export class Sender extends EventTarget {
     this.candidateQueues.clear();
 
     delete this._handler;
-  }
-
-  send(data, id) {
-    const send = (conn, data) => {
-      if (conn.channel?.readyState === 'open') {
-        conn.channel.send(data);
-      }
-      else {
-        conn.queue.push(data);
-        if (conn.queue.length > this.queueSize) {
-          conn.queue.shift();
-        }
-      }
-    };
-
-    if (id) {
-      const conn = this.connections.get(id);
-      if (conn) send(conn, data);
-    }
-    else {
-      for (const conn of this.connections.values()) {
-        send(conn, data);
-      }
-    }
-  }
-
-  sync(state, merge) {
-    if (merge) {
-      Object.assign(this.state, state);
-    }
-
-    for (const id of this.connections.keys()) {
-      this.driver.emit(['receiver', this.room, id], {
-        type: 'sync',
-        id: this.id,
-        state: this.state,
-      });
-    }
   }
 }
