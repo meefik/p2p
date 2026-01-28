@@ -1,6 +1,4 @@
 import { Sender, Receiver } from '../src/index.js';
-import { LocalDriver } from './driver/local.js';
-import { NatsDriver } from './driver/nats.js';
 import { createApp } from './ui.js';
 
 const DRIVERS_LIST = ['local', 'nats'];
@@ -8,9 +6,11 @@ const DRIVERS_LIST = ['local', 'nats'];
 const setupConference = async (app) => {
   let driver;
   if (app.dataset.driver === 'local') {
+    const { LocalDriver } = await import('./driver/local.js');
     driver = new LocalDriver();
   }
   else if (app.dataset.driver === 'nats') {
+    const { NatsDriver } = await import ('./driver/nats.js');
     driver = new NatsDriver();
   }
   else {
@@ -24,25 +24,8 @@ const setupConference = async (app) => {
 
   receiver.addEventListener('stream', (e) => {
     const { id, stream, state } = e.detail;
-    const { nickname = 'Guest', pid, audio, video, source } = state || {};
-    app.appendItem(id, pid, { stream, source, nickname, audioEnabled: audio, videoEnabled: video });
-  });
-
-  receiver.addEventListener('channel', (e) => {
-    const { id, state } = e.detail;
-    const { nickname = 'Guest', pid } = state || {};
-    app.appendItem(id, pid, { nickname });
-  });
-
-  receiver.addEventListener('dispose', (e) => {
-    const { id } = e.detail;
-    app.removeItem(id);
-  });
-
-  receiver.addEventListener('message', (e) => {
-    const { message, state } = e.detail;
-    const { nickname = 'Guest' } = state || {};
-    app.appendMessage(message, nickname);
+    const { pid, audio, video, source } = state || {};
+    app.appendItem(id, pid, { stream, source, audio, video });
   });
 
   receiver.addEventListener('sync', (e) => {
@@ -51,11 +34,29 @@ const setupConference = async (app) => {
     app.updateItem(id, { audio, video });
   });
 
+  receiver.addEventListener('channel:open', (e) => {
+    const { id, state } = e.detail;
+    const { nickname = 'Guest', pid } = state || {};
+    app.appendItem(id, pid, { nickname });
+  });
+
+  receiver.addEventListener('channel:message', (e) => {
+    const { data, state } = e.detail;
+    const { nickname = 'Guest' } = state || {};
+    app.appendMessage(data, nickname);
+  });
+
+  receiver.addEventListener('dispose', (e) => {
+    const { id } = e.detail;
+    app.removeItem(id);
+  });
+
   await driver.open(app.dataset.room);
 
   receiver.start({ room: app.dataset.room });
   dataSender.start({
     room: app.dataset.room,
+    channels: { chat: { ordered: true } },
     state: { nickname: app.dataset.nickname, pid: app.dataset.id },
   });
 
@@ -90,8 +91,8 @@ const captureCamera = async (options) => {
       source: 'camera',
       muted: true,
       mirror: true,
-      audioEnabled: !!audioEnabled,
-      videoEnabled: !!videoEnabled,
+      audio: !!audioEnabled,
+      video: !!videoEnabled,
     });
     return stream;
   }
@@ -111,7 +112,7 @@ const captureCamera = async (options) => {
       return null;
     }
     else {
-      sender.sync({ audio: isAudioEnabled, video: isVideoEnabled }, true);
+      sender.sync({ audio: isAudioEnabled, video: isVideoEnabled }, { merge: true });
       app.updateItem(sender.id, { audio: isAudioEnabled, video: isVideoEnabled });
       return stream;
     }
@@ -140,7 +141,7 @@ const captureScreen = async (options) => {
       stream,
       source: 'screen',
       muted: true,
-      videoEnabled: true,
+      video: true,
     });
     return stream;
   }

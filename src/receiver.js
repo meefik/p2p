@@ -9,29 +9,31 @@ import {
  * remote media streams and emits events to notify callers about messages,
  * streams, state changes, disposals, and errors.
  *
+ * @class Receiver
  * @extends {EventTarget}
  *
- * @param {Object} config - Configuration options passed to the constructor.
- * @param {Object} config.driver - Signaling driver (required) used to receive and send messages.
- * @param {Array<RTCIceServer>} [config.iceServers] - ICE servers for RTCPeerConnection.
- * @param {number} [config.connectionTimeout=30] - Connection timeout in seconds.
- * @param {number} [config.pingInterval=30] - Ping interval in seconds to re-establish connections.
- * @param {number} [config.pingAttempts=10] - Number of ping attempts after all peers are gone.
- *
- * Events emitted (CustomEvent.detail):
- * - 'message' : { id: string, message: any } // data channel message received
- * - 'stream'  : { id: string, stream: MediaStream } // remote media stream
- * - 'channel' : { id: string, channel: RTCDataChannel } // data channel opened
- * - 'sync'    : { id: string, state: object } // sender changed media state
- * - 'connect' : { id: string, peer: RTCPeerConnection } // peer connection established
- * - 'dispose' : { id: string, error?: Error } // peer disposed
- * - 'error'   : { id: string, error: Error } // non-fatal error occurred
- *
- * Public methods:
- * - start(options) : Begin listening for signaling; options.room can be provided.
- * - stop()         : Stop listening and close all connections.
+ * @fires Receiver#connect Emitted when a peer connection is established.
+ * @fires Receiver#stream Emitted when a remote media stream is received.
+ * @fires Receiver#dispose Emitted when a peer connection is closed.
+ * @fires Receiver#sync Emitted when a peer's state is synchronized.
+ * @fires Receiver#error Emitted when an error occurs.
+ * @fires Receiver#channel:open Emitted when a data channel is opened.
+ * @fires Receiver#channel:close Emitted when a data channel is closed.
+ * @fires Receiver#channel:error Emitted when a data channel error occurs.
+ * @fires Receiver#channel:message Emitted when a message is received on a data channel.
  */
 export class Receiver extends EventTarget {
+  /**
+   * Creates an instance of Receiver.
+   *
+   * @param {Object} config Configuration options.
+   * @param {Object} config.driver Signaling driver (required).
+   * @param {Array<RTCIceServer>} [config.iceServers] ICE servers for RTCPeerConnection.
+   * @param {number} [config.connectionTimeout=30] Connection timeout in seconds.
+   * @param {number} [config.pingInterval=30] Ping interval in seconds to re-establish connections.
+   * @param {number} [config.pingAttempts=10] Number of ping attempts after all peers are gone.
+   * @throws {Error} If the driver is not provided.
+   */
   constructor(config) {
     super();
     const {
@@ -53,10 +55,23 @@ export class Receiver extends EventTarget {
     this.candidateQueues = new Map();
   }
 
+  /**
+   * Indicates whether the Receiver is currently active.
+   *
+   * @returns {boolean} True if the Receiver is started, false otherwise.
+   */
   get active() {
     return !!this._handler;
   }
 
+  /**
+   * Start the Receiver and listen for incoming connections.
+   *
+   * @param {Object} options Options for starting the Receiver.
+   * @param {string} [options.room='default'] Room name to join.
+   * @param {Object} [options.credentials] Credentials for authentication.
+   * @returns {void}
+   */
   start(options) {
     if (this._handler) return;
 
@@ -95,13 +110,15 @@ export class Receiver extends EventTarget {
               clearTimeout(timeout);
               this.connections.delete(id);
 
-              conn.channel?.close();
+              conn.channels?.forEach(channel => channel?.close());
               conn.peer?.close();
 
               this.dispatchEvent(new CustomEvent('dispose', {
                 detail: { id, peer: conn.peer, error, state: conn.state },
               }));
             },
+            channels: new Map(),
+            stream: null,
           };
           this.connections.set(id, conn);
 
@@ -138,28 +155,40 @@ export class Receiver extends EventTarget {
           });
 
           conn.peer.addEventListener('datachannel', (e) => {
-            if (conn.channel) return;
-            conn.channel = e.channel;
+            const { channel } = e;
+            if (conn.channels.has(channel.label)) return;
 
-            conn.channel.addEventListener('open', () => {
-              this.dispatchEvent(new CustomEvent('channel', {
-                detail: { id, peer: conn.peer, channel: conn.channel, state: conn.state },
+            conn.channels.set(channel.label, channel);
+
+            channel.addEventListener('open', () => {
+              this.dispatchEvent(new CustomEvent('channel:open', {
+                detail: { id, peer: conn.peer, channel, state: conn.state },
               }));
             }, { once: true });
 
-            conn.channel.addEventListener('message', (e) => {
-              const { data: message } = e;
+            channel.addEventListener('close', () => {
+              this.dispatchEvent(new CustomEvent('channel:close', {
+                detail: { id, peer: conn.peer, channel, state: conn.state },
+              }));
+            }, { once: true });
 
-              this.dispatchEvent(new CustomEvent('message', {
-                detail: { id, peer: conn.peer, message, state: conn.state },
+            channel.addEventListener('error', (e) => {
+              const { error } = e;
+              this.dispatchEvent(new CustomEvent('channel:error', {
+                detail: { id, peer: conn.peer, channel, error, state: conn.state },
               }));
             });
-          }, { once: true });
+
+            channel.addEventListener('message', (e) => {
+              const { data } = e;
+              this.dispatchEvent(new CustomEvent('channel:message', {
+                detail: { id, peer: conn.peer, channel, data, state: conn.state },
+              }));
+            });
+          });
 
           conn.peer.addEventListener('track', (e) => {
-            if (conn.stream) return;
             conn.stream = e.streams[0];
-
             this.dispatchEvent(new CustomEvent('stream', {
               detail: { id, peer: conn.peer, stream: conn.stream, state: conn.state },
             }));
@@ -169,12 +198,14 @@ export class Receiver extends EventTarget {
 
           // add queued candidates
           if (this.candidateQueues.has(id)) {
-            for (const candidate of this.candidateQueues.get(id)) {
+            for (let candidate of this.candidateQueues.get(id)) {
               try {
                 await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
               }
               catch (error) {
-                this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+                this.dispatchEvent(new CustomEvent('error', {
+                  detail: { id, error },
+                }));
               }
             }
             this.candidateQueues.delete(id);
@@ -192,7 +223,9 @@ export class Receiver extends EventTarget {
         catch (error) {
           const conn = this.connections.get(id);
           if (conn) conn.dispose(error);
-          else this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+          else this.dispatchEvent(new CustomEvent('error', {
+            detail: { id, error },
+          }));
         }
 
         return;
@@ -212,7 +245,9 @@ export class Receiver extends EventTarget {
           await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
         }
         catch (error) {
-          this.dispatchEvent(new CustomEvent('error', { detail: { id, error } }));
+          this.dispatchEvent(new CustomEvent('error', {
+            detail: { id, error },
+          }));
         }
 
         return;
@@ -268,6 +303,11 @@ export class Receiver extends EventTarget {
     }, this.pingInterval * 1000);
   }
 
+  /**
+   * Stop the Receiver and close all connections.
+   *
+   * @returns {void}
+   */
   stop() {
     if (!this._handler) return;
 
@@ -277,7 +317,7 @@ export class Receiver extends EventTarget {
     this.driver.off(['receiver', this.room], this._handler);
     this.driver.off(['receiver', this.room, this.id], this._handler);
 
-    for (const conn of this.connections.values()) {
+    for (let conn of this.connections.values()) {
       conn.dispose();
     }
     this.connections.clear();
