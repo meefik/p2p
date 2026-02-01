@@ -54,10 +54,15 @@ export interface ChannelMessageEvent {
   data: any;
 }
 
+export interface VerifyOptions {
+  id: string;
+  credentials: any;
+}
+
 export interface SenderConfig {
   driver: Driver;
   iceServers?: RTCIceServer[];
-  verify?: (id: string, credentials: any) => boolean;
+  verify?: (options: VerifyOptions) => boolean;
   connectionTimeout?: number;
   audioBitrate?: number;
   videoBitrate?: number;

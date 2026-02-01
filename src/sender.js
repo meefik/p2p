@@ -98,7 +98,7 @@ export class Sender extends EventTarget {
         if (this.connections.has(id)) return;
 
         if (this.verify) {
-          const isValid = await this.verify(id, credentials);
+          const isValid = await this.verify({ id, credentials });
           if (!isValid) return;
         }
 

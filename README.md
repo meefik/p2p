@@ -37,7 +37,9 @@ class MemoryDriver extends Map {
   constructor() { super(); }
   on(namespace, handler) {
     const k = namespace.join(':');
-    if (!this.has(k)) this.set(k, new Set());
+    if (!this.has(k)) {
+      this.set(k, new Set());
+    }
     this.get(k).add(handler);
   }
   off(namespace, handler) {
@@ -48,7 +50,11 @@ class MemoryDriver extends Map {
     const k = namespace.join(':');
     if (!this.has(k)) return;
     for (const h of this.get(k)) {
-      try { h(message); } catch (e) { /* swallow errors */ }
+      try {
+        h(message);
+      } catch (e) {
+        /* swallow errors */
+      }
     }
   }
 }
@@ -142,6 +148,6 @@ Events: `stream`, `connect`, `dispose`, `channel:open`, `channel:close`, `channe
 
 ## Security & verification
 
-- Sender supports an optional verify(id, credentials) callback to accept/reject incoming invocations.
+- Sender supports an optional verify() callback to accept/reject incoming invocations.
 - If you need authentication/authorization, implement it in your signaling layer and/or verify callback.
 - Always use secure signaling channels (e.g., WSS) to protect exchanged SDP and ICE candidates.
