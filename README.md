@@ -68,7 +68,7 @@ Signaling namespaces (contract)
 
 Message types
 - `invoke` — discovery / request to connect (contains id, optional credentials)
-- `offer` — sender -> receiver with SDP offer and state
+- `offer` — sender -> receiver with SDP offer and metadata
 - `answer` — receiver -> sender with SDP answer
 - `candidate` — ICE candidate exchange
 - `dispose` — end/tear-down
@@ -81,17 +81,26 @@ const driver = new MemoryDriver();
 const receiver = new Receiver({ driver });
 
 receiver.addEventListener('stream', (e) => {
-  const { id, stream, state } = e.detail;
+  const { id, stream, metadata } = e.detail;
+  console.log('received stream from', id, metadata);
+
+  // attach the received stream to a video element
   const video = document.createElement('video');
   video.autoplay = true;
   video.srcObject = stream;
-  video.dataset.muted = state.muted;
+  video.dataset.source = metadata.source || 'unknown';
   document.body.appendChild(video);
 });
 
 receiver.addEventListener('channel:message', (e) => {
-  const { id, data } = e.detail;
-  console.log('msg from', id, data);
+  const { id, channel, data } = e.detail;
+  console.log('msg from', id, channel.label, data);
+
+  if (channel.label === 'chat') {
+    console.log('chat message:', data);
+    // respond to chat messages
+    channel.send('ping');
+  }
 });
 
 receiver.start({ room: 'demo-room' });
@@ -108,7 +117,26 @@ const sender = new Sender({ driver });
 sender.addEventListener('connect', (e) => {
   const { id } = e.detail;
   console.log('peer connected', id);
-  sender.send('hello', { peer: id, channel: 'chat' });
+});
+
+sender.addEventListener('channel:open', (e) => {
+  const { id, channel } = e.detail;
+  console.log('data channel opened', id, channel.label);
+
+  if (channel.label === 'chat') {
+    // send a message to the data channel
+    channel.send('ping');
+  }
+});
+
+sender.addEventListener('channel:message', (e) => {
+  const { id, channel, data } = e.detail;
+  console.log('msg from', id, channel.label, data);
+
+  if (channel.label === 'chat') {
+    // read a chat message from the data channel
+    console.log('chat message:', data);
+  }
 });
 
 navigator.mediaDevices.getUserMedia({ audio: true, video: true })
@@ -116,17 +144,30 @@ navigator.mediaDevices.getUserMedia({ audio: true, video: true })
     sender.start({
       room: 'demo-room',
       stream,
-      state: { muted: false },
-      channels: { chat: { ordered: true } },
+      channels: {
+        chat: { ordered: true }
+      },
+      metadata: { source: 'camera' },
     });
+    // sender.stop();
   });
+```
+
+You can send a message to all connected peers via the 'chat' data channel:
+```js
+sender.connections.forEach((conn) => {
+  const channel = conn.channels.get('chat');
+  if (channel && channel.readyState === 'open') {
+    channel.send('hello peers!');
+  }
+});
 ```
 
 ## API summary
 
 Sender:
 - constructor(config: { driver, iceServers?, verify?, connectionTimeout?, audioBitrate?, videoBitrate? })
-- start({ room?, stream?, metadata?, channels? })
+- start({ room?, stream?, channels?, metadata? })
 - stop()
 
 Events: `connect`, `dispose`, `error`, `channel:open`, `channel:close`, `channel:error`, `channel:message`
