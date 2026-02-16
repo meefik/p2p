@@ -269,20 +269,22 @@ export class Receiver extends EventTarget {
       credentials,
     });
 
-    this._ping = 0;
-    this._timer = setInterval(() => {
-      if (this.connections.size > 0) {
-        this._ping = this.pingAttempts;
-      }
-      if (this._ping > 0) {
-        this._ping--;
-        this.driver.emit(['sender', this.room], {
-          type: 'invoke',
-          id: this.id,
-          credentials,
-        });
-      }
-    }, this.pingInterval * 1000);
+    if (this.pingInterval > 0 && this.pingAttempts > 0) {
+      this._ping = this.pingAttempts;
+      this._timer = setInterval(() => {
+        if (this.connections.size > 0) {
+          this._ping = this.pingAttempts;
+        }
+        if (this._ping > 0) {
+          this._ping--;
+          this.driver.emit(['sender', this.room], {
+            type: 'invoke',
+            id: this.id,
+            credentials,
+          });
+        }
+      }, this.pingInterval * 1000);
+    }
   }
 
   /**
