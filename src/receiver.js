@@ -111,7 +111,7 @@ export class Receiver extends EventTarget {
               conn.peer?.close();
 
               this.dispatchEvent(new CustomEvent('dispose', {
-                detail: { id, peer: conn.peer, error },
+                detail: { id, peer: conn.peer, error, metadata },
               }));
             },
             channels: new Map(),
@@ -158,27 +158,27 @@ export class Receiver extends EventTarget {
 
             channel.addEventListener('open', () => {
               this.dispatchEvent(new CustomEvent('channel:open', {
-                detail: { id, peer: conn.peer, channel },
+                detail: { id, peer: conn.peer, channel, metadata },
               }));
             }, { once: true });
 
             channel.addEventListener('close', () => {
               this.dispatchEvent(new CustomEvent('channel:close', {
-                detail: { id, peer: conn.peer, channel },
+                detail: { id, peer: conn.peer, channel, metadata },
               }));
             }, { once: true });
 
             channel.addEventListener('error', (e) => {
               const { error } = e;
               this.dispatchEvent(new CustomEvent('channel:error', {
-                detail: { id, peer: conn.peer, channel, error },
+                detail: { id, peer: conn.peer, channel, error, metadata },
               }));
             });
 
             channel.addEventListener('message', (e) => {
               const { data } = e;
               this.dispatchEvent(new CustomEvent('channel:message', {
-                detail: { id, peer: conn.peer, channel, data },
+                detail: { id, peer: conn.peer, channel, data, metadata },
               }));
             });
           });

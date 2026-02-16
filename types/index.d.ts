@@ -21,6 +21,7 @@ export interface DisposeEvent {
   id: string;
   peer: RTCPeerConnection;
   error?: Error;
+  metadata?: any;
 }
 
 export interface ErrorEvent {
@@ -32,12 +33,14 @@ export interface ChannelOpenEvent {
   id: string;
   peer: RTCPeerConnection;
   channel: RTCDataChannel;
+  metadata?: any;
 }
 
 export interface ChannelCloseEvent {
   id: string;
   peer: RTCPeerConnection;
   channel: RTCDataChannel;
+  metadata?: any;
 }
 
 export interface ChannelErrorEvent {
@@ -45,6 +48,7 @@ export interface ChannelErrorEvent {
   peer: RTCPeerConnection;
   channel: RTCDataChannel;
   error: Error;
+  metadata?: any;
 }
 
 export interface ChannelMessageEvent {
@@ -52,6 +56,7 @@ export interface ChannelMessageEvent {
   peer: RTCPeerConnection;
   channel: RTCDataChannel;
   data: any;
+  metadata?: any;
 }
 
 export interface VerifyOptions {
