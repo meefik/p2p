@@ -1,7 +1,7 @@
 export interface Driver {
-  on(namespace: string[], handler: (message: any) => void): void;
-  off(namespace: string[], handler: (message: any) => void): void;
-  emit(namespace: string[], message: any): void;
+  subscribe(namespace: string[], handler: (message: any) => void): void;
+  unsubscribe(namespace: string[], handler: (message: any) => void): void;
+  dispatch(namespace: string[], message: any): void;
 }
 
 export interface ConnectEvent {
@@ -77,7 +77,7 @@ export interface SenderStartOptions {
   room: string;
   stream?: MediaStream;
   metadata?: any;
-  channels?: { [label: string]: object };
+  channels?: { [label: string]: object; };
 }
 
 export interface SenderEventMap {

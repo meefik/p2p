@@ -86,7 +86,7 @@ export class Receiver extends EventTarget {
       if (type === 'invoke') {
         if (this.connections.has(id)) return;
 
-        this.driver.emit(['sender', this.room, id], {
+        this.driver.dispatch(['sender', this.room, id], {
           type: 'invoke',
           id: this.id,
           credentials,
@@ -143,7 +143,7 @@ export class Receiver extends EventTarget {
 
           conn.peer.addEventListener('icecandidate', (e) => {
             if (!e?.candidate) return;
-            this.driver.emit(['sender', this.room, id], {
+            this.driver.dispatch(['sender', this.room, id], {
               type: 'candidate',
               id: this.id,
               candidate: e.candidate,
@@ -210,7 +210,7 @@ export class Receiver extends EventTarget {
           await conn.peer.setLocalDescription(await conn.peer.createAnswer());
 
           // send answer
-          this.driver.emit(['sender', this.room, id], {
+          this.driver.dispatch(['sender', this.room, id], {
             type: 'answer',
             id: this.id,
             answer: conn.peer.localDescription,
@@ -260,10 +260,10 @@ export class Receiver extends EventTarget {
       }
     };
 
-    this.driver.on(['receiver', this.room], this._handler);
-    this.driver.on(['receiver', this.room, this.id], this._handler);
+    this.driver.subscribe(['receiver', this.room], this._handler);
+    this.driver.subscribe(['receiver', this.room, this.id], this._handler);
 
-    this.driver.emit(['sender', this.room], {
+    this.driver.dispatch(['sender', this.room], {
       type: 'invoke',
       id: this.id,
       credentials,
@@ -277,7 +277,7 @@ export class Receiver extends EventTarget {
         }
         if (this._ping > 0) {
           this._ping--;
-          this.driver.emit(['sender', this.room], {
+          this.driver.dispatch(['sender', this.room], {
             type: 'invoke',
             id: this.id,
             credentials,
@@ -298,8 +298,8 @@ export class Receiver extends EventTarget {
     clearInterval(this._timer);
     delete this._timer;
 
-    this.driver.off(['receiver', this.room], this._handler);
-    this.driver.off(['receiver', this.room, this.id], this._handler);
+    this.driver.unsubscribe(['receiver', this.room], this._handler);
+    this.driver.unsubscribe(['receiver', this.room, this.id], this._handler);
 
     for (let conn of this.connections.values()) {
       conn.dispose();

@@ -22,7 +22,7 @@ export class LocalDriver extends Map {
     window.removeEventListener('storage', this._storageEventHandler);
   }
 
-  on(namespace, handler) {
+  subscribe(namespace, handler) {
     const ns = namespace.join(':');
     if (!this.has(ns)) {
       this.set(ns, new Set());
@@ -30,7 +30,7 @@ export class LocalDriver extends Map {
     this.get(ns).add(handler);
   }
 
-  off(namespace, handler) {
+  unsubscribe(namespace, handler) {
     const ns = namespace.join(':');
     if (this.has(ns)) {
       if (handler) {
@@ -45,7 +45,7 @@ export class LocalDriver extends Map {
     }
   }
 
-  emit(namespace, data) {
+  dispatch(namespace, data) {
     const ns = namespace.join(':');
     localStorage.setItem(ns, JSON.stringify({ ...data, _: Math.random() }));
   }

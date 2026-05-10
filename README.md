@@ -5,12 +5,14 @@ A tiny, signaling-agnostic library for building peer-to-peer WebRTC conferencing
 Key ideas:
 - **Sender**: creates outgoing RTCPeerConnections, publishes a local MediaStream, and optionally opens data channels to receivers.
 - **Receiver**: listens for offers, answers them, and exposes remote MediaStreams and incoming data messages.
-- **Signaling driver**: any object implementing `on(namespace, handler)`, `off(namespace, handler)` and `emit(namespace, message)`. This keeps the library transport-agnostic (WebSocket, pub/sub, in-memory, etc).
+- **Signaling driver**: any object implementing `subscribe(namespace, handler)`, `unsubscribe(namespace, handler)` and `dispatch(namespace, message)`. This keeps the library transport-agnostic (WebSocket, pub/sub, in-memory, etc).
 
 Why use p2p:
 - Minimal footprint and API surface for broadcasting a local stream and exchanging data.
 - Easy to test locally with an in-memory driver; swap to WebSocket or other drivers for production.
 - Handles ICE, offer/answer exchange, candidate buffering, and per-peer data channels.
+
+> Are you ready to build more complex peer-to-peer applications? Check out [Peerix](https://github.com/peerix-dev/peerix) — built on p2p and designed to scale feature-rich, peer-to-peer experiences.
 
 ## Quickstart
 
@@ -35,18 +37,18 @@ Minimal in-memory signaling driver (useful for local testing):
 // Minimal in-memory pub/sub driver
 class MemoryDriver extends Map {
   constructor() { super(); }
-  on(namespace, handler) {
+  subscribe(namespace, handler) {
     const k = namespace.join(':');
     if (!this.has(k)) {
       this.set(k, new Set());
     }
     this.get(k).add(handler);
   }
-  off(namespace, handler) {
+  unsubscribe(namespace, handler) {
     const k = namespace.join(':');
     this.get(k)?.delete(handler);
   }
-  emit(namespace, message) {
+  dispatch(namespace, message) {
     const k = namespace.join(':');
     if (!this.has(k)) return;
     for (const h of this.get(k)) {
@@ -62,9 +64,9 @@ class MemoryDriver extends Map {
 
 Signaling namespaces (contract)
 - Sender listens on: `['sender', room]` and `['sender', room, senderId]`
-- Sender emits to: `['receiver', room]` and `['receiver', room, receiverId]`
+- Sender dispatches to: `['receiver', room]` and `['receiver', room, receiverId]`
 - Receiver listens on: `['receiver', room]` and `['receiver', room, receiverId]`
-- Receiver emits to: `['sender', room]` and `['sender', room, senderId]`
+- Receiver dispatches to: `['sender', room]` and `['sender', room, senderId]`
 
 Message types
 - `invoke` — discovery / request to connect (contains id, optional credentials)

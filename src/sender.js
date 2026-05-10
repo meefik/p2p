@@ -113,7 +113,7 @@ export class Sender extends EventTarget {
               conn.channels?.forEach(channel => channel?.close());
               conn.peer?.close();
 
-              this.driver.emit(['receiver', this.room, id], {
+              this.driver.dispatch(['receiver', this.room, id], {
                 type: 'dispose',
                 id: this.id,
               });
@@ -151,7 +151,7 @@ export class Sender extends EventTarget {
 
           conn.peer.addEventListener('icecandidate', (e) => {
             if (!e?.candidate) return;
-            this.driver.emit(['receiver', this.room, id], {
+            this.driver.dispatch(['receiver', this.room, id], {
               type: 'candidate',
               id: this.id,
               candidate: e.candidate,
@@ -211,7 +211,7 @@ export class Sender extends EventTarget {
           await conn.peer.setLocalDescription(offer);
 
           // send offer
-          this.driver.emit(['receiver', this.room, id], {
+          this.driver.dispatch(['receiver', this.room, id], {
             type: 'offer',
             id: this.id,
             offer,
@@ -283,10 +283,10 @@ export class Sender extends EventTarget {
       }
     };
 
-    this.driver.on(['sender', this.room], this._handler);
-    this.driver.on(['sender', this.room, this.id], this._handler);
+    this.driver.subscribe(['sender', this.room], this._handler);
+    this.driver.subscribe(['sender', this.room, this.id], this._handler);
 
-    this.driver.emit(['receiver', this.room], {
+    this.driver.dispatch(['receiver', this.room], {
       type: 'invoke',
       id: this.id,
     });
@@ -300,8 +300,8 @@ export class Sender extends EventTarget {
   stop() {
     if (!this._handler) return;
 
-    this.driver.off(['sender', this.room], this._handler);
-    this.driver.off(['sender', this.room, this.id], this._handler);
+    this.driver.unsubscribe(['sender', this.room], this._handler);
+    this.driver.unsubscribe(['sender', this.room, this.id], this._handler);
 
     for (let conn of this.connections.values()) {
       conn.dispose();

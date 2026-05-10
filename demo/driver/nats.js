@@ -59,7 +59,7 @@ export class NatsDriver extends Map {
     await this.nc.drain();
   }
 
-  async on(namespace, handler) {
+  async subscribe(namespace, handler) {
     const ns = await sha256(namespace.join(':'));
     const sub = this.nc.subscribe(ns, {
       callback: async (err, msg) => {
@@ -81,7 +81,7 @@ export class NatsDriver extends Map {
     this.get(ns).set(handler, sub);
   }
 
-  async off(namespace, handler) {
+  async unsubscribe(namespace, handler) {
     const ns = await sha256(namespace.join(':'));
     const sub = this.get(ns)?.get(handler);
     if (sub) {
@@ -93,7 +93,7 @@ export class NatsDriver extends Map {
     }
   }
 
-  async emit(namespace, message) {
+  async dispatch(namespace, message) {
     const ns = await sha256(namespace.join(':'));
     if (this.nc) {
       let data = sc.encode(JSON.stringify(message));
