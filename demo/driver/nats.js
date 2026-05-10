@@ -1,6 +1,4 @@
-import { connect, StringCodec } from 'https://esm.sh/nats.ws';
-
-const sc = StringCodec();
+import { wsconnect } from 'https://esm.sh/@nats-io/nats-core@3.4.0';
 
 const sha256 = async (msg) => {
   const data = new TextEncoder().encode(msg);
@@ -49,7 +47,7 @@ export class NatsDriver extends Map {
   }
 
   async open(secret) {
-    this.nc = await connect({ servers: this.servers, noEcho: true });
+    this.nc = await wsconnect({ servers: this.servers, noEcho: true });
     if (secret) {
       this.cryptoKey = await createEncryptionKey(secret);
     }
@@ -71,7 +69,7 @@ export class NatsDriver extends Map {
         if (this.cryptoKey) {
           data = await decrypt(data, this.cryptoKey);
         }
-        const payload = JSON.parse(sc.decode(data));
+        const payload = JSON.parse(new TextDecoder().decode(data));
         handler(payload);
       },
     });
@@ -96,7 +94,7 @@ export class NatsDriver extends Map {
   async dispatch(namespace, message) {
     const ns = await sha256(namespace.join(':'));
     if (this.nc) {
-      let data = sc.encode(JSON.stringify(message));
+      let data = new TextEncoder().encode(JSON.stringify(message));
       if (this.cryptoKey) {
         data = await encrypt(data, this.cryptoKey);
       }
