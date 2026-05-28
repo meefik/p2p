@@ -4,7 +4,7 @@ const sha256 = async (msg) => {
   const data = new TextEncoder().encode(msg);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
+    .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 };
 
@@ -36,7 +36,11 @@ const encrypt = async (payload, cryptoKey) => {
 const decrypt = async (data, cryptoKey) => {
   const iv = data.slice(0, 12);
   const ct = data.slice(12);
-  const payload = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ct);
+  const payload = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    cryptoKey,
+    ct,
+  );
   return payload;
 };
 
@@ -91,7 +95,7 @@ export class NatsDriver extends Map {
     }
   }
 
-  async dispatch(namespace, message) {
+  async publish(namespace, message) {
     const ns = await sha256(namespace.join(':'));
     if (this.nc) {
       let data = new TextEncoder().encode(JSON.stringify(message));

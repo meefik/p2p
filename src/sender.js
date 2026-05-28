@@ -79,12 +79,7 @@ export class Sender extends EventTarget {
   start(options) {
     if (this._handler) return;
 
-    const {
-      room,
-      stream,
-      metadata,
-      channels,
-    } = options || {};
+    const { room, stream, metadata, channels } = options || {};
 
     this.id = stream?.id || uuid();
     this.room = room || 'default';
@@ -110,35 +105,41 @@ export class Sender extends EventTarget {
               clearTimeout(timeout);
               this.connections.delete(id);
 
-              conn.channels?.forEach(channel => channel?.close());
+              conn.channels?.forEach((channel) => channel?.close());
               conn.peer?.close();
 
-              this.driver.dispatch(['receiver', this.room, id], {
+              this.driver.publish(['receiver', this.room, id], {
                 type: 'dispose',
                 id: this.id,
               });
 
-              this.dispatchEvent(new CustomEvent('dispose', {
-                detail: { id, peer: conn.peer, error },
-              }));
+              this.dispatchEvent(
+                new CustomEvent('dispose', {
+                  detail: { id, peer: conn.peer, error },
+                }),
+              );
             },
             channels: new Map(),
           };
           this.connections.set(id, conn);
 
-          const timeout = this.connectionTimeout > 0 && setTimeout(
-            () => conn.dispose(new Error('Connection timeout')),
-            this.connectionTimeout * 1000,
-          );
+          const timeout =
+            this.connectionTimeout > 0 &&
+            setTimeout(
+              () => conn.dispose(new Error('Connection timeout')),
+              this.connectionTimeout * 1000,
+            );
 
           conn.peer.addEventListener('iceconnectionstatechange', (e) => {
             const { iceConnectionState } = e.target;
             switch (iceConnectionState) {
               case 'connected':
                 clearTimeout(timeout);
-                this.dispatchEvent(new CustomEvent('connect', {
-                  detail: { id, peer: conn.peer },
-                }));
+                this.dispatchEvent(
+                  new CustomEvent('connect', {
+                    detail: { id, peer: conn.peer },
+                  }),
+                );
                 break;
               case 'disconnected':
                 conn.dispose();
@@ -151,7 +152,7 @@ export class Sender extends EventTarget {
 
           conn.peer.addEventListener('icecandidate', (e) => {
             if (!e?.candidate) return;
-            this.driver.dispatch(['receiver', this.room, id], {
+            this.driver.publish(['receiver', this.room, id], {
               type: 'candidate',
               id: this.id,
               candidate: e.candidate,
@@ -159,8 +160,14 @@ export class Sender extends EventTarget {
           });
 
           if (stream) {
-            stream.getTracks().forEach(track => conn.peer.addTrack(track, stream));
-            setPeerConnectionBitrate(conn.peer, this.audioBitrate, this.videoBitrate);
+            stream
+              .getTracks()
+              .forEach((track) => conn.peer.addTrack(track, stream));
+            setPeerConnectionBitrate(
+              conn.peer,
+              this.audioBitrate,
+              this.videoBitrate,
+            );
           }
 
           if (channels) {
@@ -171,59 +178,89 @@ export class Sender extends EventTarget {
               if (!options) continue;
               if (typeof options !== 'object') options = {};
 
-              const dataChannel = conn.peer.createDataChannel(channelLabel, options);
+              const dataChannel = conn.peer.createDataChannel(
+                channelLabel,
+                options,
+              );
               conn.channels.set(channelLabel, dataChannel);
 
-              dataChannel.addEventListener('open', () => {
-                this.dispatchEvent(new CustomEvent('channel:open', {
-                  detail: { id, peer: conn.peer, channel: dataChannel },
-                }));
-              }, { once: true });
+              dataChannel.addEventListener(
+                'open',
+                () => {
+                  this.dispatchEvent(
+                    new CustomEvent('channel:open', {
+                      detail: { id, peer: conn.peer, channel: dataChannel },
+                    }),
+                  );
+                },
+                { once: true },
+              );
 
-              dataChannel.addEventListener('close', () => {
-                this.dispatchEvent(new CustomEvent('channel:close', {
-                  detail: { id, peer: conn.peer, channel: dataChannel },
-                }));
-              }, { once: true });
+              dataChannel.addEventListener(
+                'close',
+                () => {
+                  this.dispatchEvent(
+                    new CustomEvent('channel:close', {
+                      detail: { id, peer: conn.peer, channel: dataChannel },
+                    }),
+                  );
+                },
+                { once: true },
+              );
 
               dataChannel.addEventListener('error', (e) => {
                 const { error } = e;
-                this.dispatchEvent(new CustomEvent('channel:error', {
-                  detail: { id, peer: conn.peer, channel: dataChannel, error },
-                }));
+                this.dispatchEvent(
+                  new CustomEvent('channel:error', {
+                    detail: {
+                      id,
+                      peer: conn.peer,
+                      channel: dataChannel,
+                      error,
+                    },
+                  }),
+                );
               });
 
               dataChannel.addEventListener('message', (e) => {
                 const { data } = e;
-                this.dispatchEvent(new CustomEvent('channel:message', {
-                  detail: { id, peer: conn.peer, channel: dataChannel, data },
-                }));
+                this.dispatchEvent(
+                  new CustomEvent('channel:message', {
+                    detail: { id, peer: conn.peer, channel: dataChannel, data },
+                  }),
+                );
               });
             }
           }
 
           const offer = await conn.peer.createOffer({
-            offerToReceiveAudio: stream ? stream.getAudioTracks().length > 0 : false,
-            offerToReceiveVideo: stream ? stream.getVideoTracks().length > 0 : false,
+            offerToReceiveAudio: stream
+              ? stream.getAudioTracks().length > 0
+              : false,
+            offerToReceiveVideo: stream
+              ? stream.getVideoTracks().length > 0
+              : false,
             iceRestart: false,
           });
 
           await conn.peer.setLocalDescription(offer);
 
           // send offer
-          this.driver.dispatch(['receiver', this.room, id], {
+          this.driver.publish(['receiver', this.room, id], {
             type: 'offer',
             id: this.id,
             offer,
             metadata,
           });
-        }
-        catch (error) {
+        } catch (error) {
           const conn = this.connections.get(id);
           if (conn) conn.dispose(error);
-          else this.dispatchEvent(new CustomEvent('error', {
-            detail: { id, error },
-          }));
+          else
+            this.dispatchEvent(
+              new CustomEvent('error', {
+                detail: { id, error },
+              }),
+            );
         }
 
         return;
@@ -235,9 +272,10 @@ export class Sender extends EventTarget {
         if (!conn) return;
 
         try {
-          await conn.peer.setRemoteDescription(new RTCSessionDescription(answer));
-        }
-        catch (error) {
+          await conn.peer.setRemoteDescription(
+            new RTCSessionDescription(answer),
+          );
+        } catch (error) {
           conn.dispose(error);
           return;
         }
@@ -247,11 +285,12 @@ export class Sender extends EventTarget {
           for (let candidate of this.candidateQueues.get(id)) {
             try {
               await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
-            }
-            catch (error) {
-              this.dispatchEvent(new CustomEvent('error', {
-                detail: { id, error },
-              }));
+            } catch (error) {
+              this.dispatchEvent(
+                new CustomEvent('error', {
+                  detail: { id, error },
+                }),
+              );
             }
           }
           this.candidateQueues.delete(id);
@@ -272,11 +311,12 @@ export class Sender extends EventTarget {
 
         try {
           await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-        catch (error) {
-          this.dispatchEvent(new CustomEvent('error', {
-            detail: { id, error },
-          }));
+        } catch (error) {
+          this.dispatchEvent(
+            new CustomEvent('error', {
+              detail: { id, error },
+            }),
+          );
         }
 
         return;
@@ -286,7 +326,7 @@ export class Sender extends EventTarget {
     this.driver.subscribe(['sender', this.room], this._handler);
     this.driver.subscribe(['sender', this.room, this.id], this._handler);
 
-    this.driver.dispatch(['receiver', this.room], {
+    this.driver.publish(['receiver', this.room], {
       type: 'invoke',
       id: this.id,
     });

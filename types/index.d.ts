@@ -1,7 +1,7 @@
 export interface Driver {
   subscribe(namespace: string[], handler: (message: any) => void): void;
   unsubscribe(namespace: string[], handler: (message: any) => void): void;
-  dispatch(namespace: string[], message: any): void;
+  publish(namespace: string[], message: any): void;
 }
 
 export interface ConnectEvent {
@@ -77,13 +77,13 @@ export interface SenderStartOptions {
   room: string;
   stream?: MediaStream;
   metadata?: any;
-  channels?: { [label: string]: object; };
+  channels?: { [label: string]: object };
 }
 
 export interface SenderEventMap {
-  'connect': ConnectEvent;
-  'dispose': DisposeEvent;
-  'error': ErrorEvent;
+  connect: ConnectEvent;
+  dispose: DisposeEvent;
+  error: ErrorEvent;
   'channel:open': ChannelOpenEvent;
   'channel:close': ChannelCloseEvent;
   'channel:error': ChannelErrorEvent;
@@ -99,13 +99,13 @@ export declare class Sender extends EventTarget {
   addEventListener<K extends keyof SenderEventMap>(
     type: K,
     listener: EventListenerOrEventListenerObject | null,
-    options?: boolean | AddEventListenerOptions
+    options?: boolean | AddEventListenerOptions,
   ): void;
 
   removeEventListener<K extends keyof SenderEventMap>(
     type: K,
     listener: EventListenerOrEventListenerObject | null,
-    options?: boolean | EventListenerOptions
+    options?: boolean | EventListenerOptions,
   ): void;
 }
 
@@ -123,10 +123,10 @@ export interface ReceiverStartOptions {
 }
 
 export interface ReceiverEventMap {
-  'connect': ConnectEvent;
-  'stream': StreamEvent;
-  'dispose': DisposeEvent;
-  'error': ErrorEvent;
+  connect: ConnectEvent;
+  stream: StreamEvent;
+  dispose: DisposeEvent;
+  error: ErrorEvent;
   'channel:open': ChannelOpenEvent;
   'channel:close': ChannelCloseEvent;
   'channel:error': ChannelErrorEvent;
@@ -142,12 +142,12 @@ export declare class Receiver extends EventTarget {
   addEventListener<K extends keyof ReceiverEventMap>(
     type: K,
     listener: EventListenerOrEventListenerObject | null,
-    options?: boolean | AddEventListenerOptions
+    options?: boolean | AddEventListenerOptions,
   ): void;
 
   removeEventListener<K extends keyof ReceiverEventMap>(
     type: K,
     listener: EventListenerOrEventListenerObject | null,
-    options?: boolean | EventListenerOptions
+    options?: boolean | EventListenerOptions,
   ): void;
 }

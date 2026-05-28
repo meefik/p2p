@@ -24,12 +24,16 @@ export const defaultIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
  * @param {number} [audioBitrate] - Audio bitrate in kbps.
  * @param {number} [videoBitrate] - Video bitrate in kbps.
  */
-export function setPeerConnectionBitrate(peerConnection, audioBitrate, videoBitrate) {
+export function setPeerConnectionBitrate(
+  peerConnection,
+  audioBitrate,
+  videoBitrate,
+) {
   if (
-    typeof peerConnection?.getSenders === 'function'
-    && 'RTCRtpSender' in window
-    && 'getParameters' in window.RTCRtpSender.prototype
-    && 'setParameters' in window.RTCRtpSender.prototype
+    typeof peerConnection?.getSenders === 'function' &&
+    'RTCRtpSender' in window &&
+    'getParameters' in window.RTCRtpSender.prototype &&
+    'setParameters' in window.RTCRtpSender.prototype
   ) {
     const bitrate = { audio: audioBitrate | 0, video: videoBitrate | 0 };
     peerConnection.getSenders().forEach((sender) => {

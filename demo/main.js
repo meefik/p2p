@@ -8,18 +8,20 @@ const setupConference = async (app) => {
   if (app.dataset.driver === 'local') {
     const { LocalDriver } = await import('./driver/local.js');
     driver = new LocalDriver();
-  }
-  else if (app.dataset.driver === 'nats') {
-    const { NatsDriver } = await import ('./driver/nats.js');
+  } else if (app.dataset.driver === 'nats') {
+    const { NatsDriver } = await import('./driver/nats.js');
     driver = new NatsDriver();
-  }
-  else {
+  } else {
     throw new Error(`Unknown driver: ${app.dataset.driver}`);
   }
 
   const receiver = new Receiver({ driver });
   const dataSender = new Sender({ driver });
-  const cameraSender = new Sender({ driver, audioBitrate: 16, videoBitrate: 128 });
+  const cameraSender = new Sender({
+    driver,
+    audioBitrate: 16,
+    videoBitrate: 128,
+  });
   const screenSender = new Sender({ driver, videoBitrate: 128 });
 
   receiver.addEventListener('connect', (e) => {
@@ -41,8 +43,7 @@ const setupConference = async (app) => {
     if (channel.label === 'camera') {
       const { audio, video } = JSON.parse(data);
       app.updateItem(id, { audio, video });
-    }
-    else if (channel.label === 'chat') {
+    } else if (channel.label === 'chat') {
       const { nickname = 'Guest', message } = JSON.parse(data);
       app.appendMessage(message, nickname);
     }
@@ -65,29 +66,31 @@ const setupConference = async (app) => {
     metadata: { pid: app.dataset.id, nickname: app.dataset.nickname },
   });
 
-  app.appendItem(dataSender.id, app.dataset.id, { nickname: app.dataset.nickname });
+  app.appendItem(dataSender.id, app.dataset.id, {
+    nickname: app.dataset.nickname,
+  });
 
   return { dataSender, cameraSender, screenSender };
 };
 
 const captureCamera = async (options) => {
-  const {
-    app,
-    sender,
-    stream,
-    audioEnabled,
-    videoEnabled,
-  } = options || {};
+  const { app, sender, stream, audioEnabled, videoEnabled } = options || {};
 
   if (!stream && (audioEnabled || videoEnabled)) {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: true,
     });
-    stream.getAudioTracks().forEach(track => (track.enabled = !!audioEnabled));
-    stream.getVideoTracks().forEach(track => (track.enabled = !!videoEnabled));
-    const isAudioEnabled = () => stream.getAudioTracks().some(track => track.enabled);
-    const isVideoEnabled = () => stream.getVideoTracks().some(track => track.enabled);
+    stream
+      .getAudioTracks()
+      .forEach((track) => (track.enabled = !!audioEnabled));
+    stream
+      .getVideoTracks()
+      .forEach((track) => (track.enabled = !!videoEnabled));
+    const isAudioEnabled = () =>
+      stream.getAudioTracks().some((track) => track.enabled);
+    const isVideoEnabled = () =>
+      stream.getVideoTracks().some((track) => track.enabled);
     sender.start({
       stream,
       room: app.dataset.room,
@@ -114,23 +117,29 @@ const captureCamera = async (options) => {
       video: !!videoEnabled,
     });
     return stream;
-  }
-  else if (stream) {
+  } else if (stream) {
     if (typeof audioEnabled !== 'undefined') {
-      stream.getAudioTracks().forEach(track => (track.enabled = !!audioEnabled));
+      stream
+        .getAudioTracks()
+        .forEach((track) => (track.enabled = !!audioEnabled));
     }
     if (typeof videoEnabled !== 'undefined') {
-      stream.getVideoTracks().forEach(track => (track.enabled = !!videoEnabled));
+      stream
+        .getVideoTracks()
+        .forEach((track) => (track.enabled = !!videoEnabled));
     }
-    const isAudioEnabled = stream.getAudioTracks().some(track => track.enabled);
-    const isVideoEnabled = stream.getVideoTracks().some(track => track.enabled);
+    const isAudioEnabled = stream
+      .getAudioTracks()
+      .some((track) => track.enabled);
+    const isVideoEnabled = stream
+      .getVideoTracks()
+      .some((track) => track.enabled);
     if (!isAudioEnabled && !isVideoEnabled) {
       app.removeItem(sender.id);
       sender.stop();
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
       return null;
-    }
-    else {
+    } else {
       sender.connections.forEach((conn) => {
         const channel = conn.channels.get('camera');
         if (channel && channel.readyState === 'open') {
@@ -138,7 +147,10 @@ const captureCamera = async (options) => {
           channel.send(JSON.stringify(state));
         }
       });
-      app.updateItem(sender.id, { audio: isAudioEnabled, video: isVideoEnabled });
+      app.updateItem(sender.id, {
+        audio: isAudioEnabled,
+        video: isVideoEnabled,
+      });
       return stream;
     }
   }
@@ -146,12 +158,7 @@ const captureCamera = async (options) => {
 };
 
 const captureScreen = async (options) => {
-  const {
-    app,
-    sender,
-    stream,
-    videoEnabled,
-  } = options || {};
+  const { app, sender, stream, videoEnabled } = options || {};
 
   if (!stream && videoEnabled) {
     const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -169,11 +176,10 @@ const captureScreen = async (options) => {
       video: true,
     });
     return stream;
-  }
-  else if (stream) {
+  } else if (stream) {
     app.removeItem(sender.id);
     sender.stop();
-    stream.getTracks().forEach(track => track.stop());
+    stream.getTracks().forEach((track) => track.stop());
     return null;
   }
 };
@@ -216,10 +222,12 @@ const app = createApp({
     senders.dataSender.connections.forEach((conn) => {
       const channel = conn.channels.get('chat');
       if (channel && channel.readyState === 'open') {
-        channel.send(JSON.stringify({
-          nickname: app.dataset.nickname,
-          message,
-        }));
+        channel.send(
+          JSON.stringify({
+            nickname: app.dataset.nickname,
+            message,
+          }),
+        );
       }
     });
   },

@@ -3,11 +3,13 @@
 A tiny, signaling-agnostic library for building peer-to-peer WebRTC conferencing (media + data channels) with pluggable signaling drivers.
 
 Key ideas:
+
 - **Sender**: creates outgoing RTCPeerConnections, publishes a local MediaStream, and optionally opens data channels to receivers.
 - **Receiver**: listens for offers, answers them, and exposes remote MediaStreams and incoming data messages.
-- **Signaling driver**: any object implementing `subscribe(namespace, handler)`, `unsubscribe(namespace, handler)` and `dispatch(namespace, message)`. This keeps the library transport-agnostic (WebSocket, pub/sub, in-memory, etc).
+- **Signaling driver**: any object implementing `subscribe(namespace, handler)`, `unsubscribe(namespace, handler)` and `publish(namespace, message)`. This keeps the library transport-agnostic (WebSocket, pub/sub, in-memory, etc).
 
 Why use p2p:
+
 - Minimal footprint and API surface for broadcasting a local stream and exchanging data.
 - Easy to test locally with an in-memory driver; swap to WebSocket or other drivers for production.
 - Handles ICE, offer/answer exchange, candidate buffering, and per-peer data channels.
@@ -17,11 +19,13 @@ Why use p2p:
 ## Quickstart
 
 Install:
+
 ```sh
 npm install p2p
 ```
 
 Run the demo (clone the repo if needed):
+
 ```sh
 npm run dev
 ```
@@ -33,10 +37,13 @@ Open <http://localhost:8000/demo/> in two browser tabs to see a simple video cha
 ## Basic usage
 
 Minimal in-memory signaling driver (useful for local testing):
+
 ```js
 // Minimal in-memory pub/sub driver
 class MemoryDriver extends Map {
-  constructor() { super(); }
+  constructor() {
+    super();
+  }
   subscribe(namespace, handler) {
     const k = namespace.join(':');
     if (!this.has(k)) {
@@ -48,27 +55,25 @@ class MemoryDriver extends Map {
     const k = namespace.join(':');
     this.get(k)?.delete(handler);
   }
-  dispatch(namespace, message) {
+  publish(namespace, message) {
     const k = namespace.join(':');
     if (!this.has(k)) return;
     for (const h of this.get(k)) {
-      try {
-        h(message);
-      } catch (e) {
-        /* swallow errors */
-      }
+      setTimeout(() => h(message), 0);
     }
   }
 }
 ```
 
 Signaling namespaces (contract)
+
 - Sender listens on: `['sender', room]` and `['sender', room, senderId]`
-- Sender dispatches to: `['receiver', room]` and `['receiver', room, receiverId]`
+- Sender publishes to: `['receiver', room]` and `['receiver', room, receiverId]`
 - Receiver listens on: `['receiver', room]` and `['receiver', room, receiverId]`
-- Receiver dispatches to: `['sender', room]` and `['sender', room, senderId]`
+- Receiver publishes to: `['sender', room]` and `['sender', room, senderId]`
 
 Message types
+
 - `invoke` — discovery / request to connect (contains id, optional credentials)
 - `offer` — sender -> receiver with SDP offer and metadata
 - `answer` — receiver -> sender with SDP answer
@@ -76,6 +81,7 @@ Message types
 - `dispose` — end/tear-down
 
 Receiver — listen for senders and attach incoming streams:
+
 ```js
 import { Receiver } from 'p2p';
 
@@ -110,6 +116,7 @@ receiver.start({ room: 'demo-room' });
 ```
 
 Sender — capture local media, broadcast, and send messages:
+
 ```js
 import { Sender } from 'p2p';
 
@@ -141,13 +148,14 @@ sender.addEventListener('channel:message', (e) => {
   }
 });
 
-navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+navigator.mediaDevices
+  .getUserMedia({ audio: true, video: true })
   .then((stream) => {
     sender.start({
       room: 'demo-room',
       stream,
       channels: {
-        chat: { ordered: true }
+        chat: { ordered: true },
       },
       metadata: { source: 'camera' },
     });
@@ -156,6 +164,7 @@ navigator.mediaDevices.getUserMedia({ audio: true, video: true })
 ```
 
 You can send a message to all connected peers via the 'chat' data channel:
+
 ```js
 sender.connections.forEach((conn) => {
   const channel = conn.channels.get('chat');
@@ -168,6 +177,7 @@ sender.connections.forEach((conn) => {
 ## API summary
 
 Sender:
+
 - constructor(config: { driver, iceServers?, verify?, connectionTimeout?, audioBitrate?, videoBitrate? })
 - start({ room?, stream?, channels?, metadata? })
 - stop()
@@ -175,6 +185,7 @@ Sender:
 Events: `connect`, `dispose`, `error`, `channel:open`, `channel:close`, `channel:error`, `channel:message`
 
 Receiver:
+
 - constructor(config: { driver, iceServers?, connectionTimeout?, pingInterval?, pingAttempts? })
 - start({ room?, credentials? })
 - stop()

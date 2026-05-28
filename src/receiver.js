@@ -1,7 +1,4 @@
-import {
-  uuid,
-  defaultIceServers,
-} from './helpers.js';
+import { uuid, defaultIceServers } from './helpers.js';
 
 /**
  * Receiver listens for signaling messages from senders and establishes WebRTC
@@ -86,7 +83,7 @@ export class Receiver extends EventTarget {
       if (type === 'invoke') {
         if (this.connections.has(id)) return;
 
-        this.driver.dispatch(['sender', this.room, id], {
+        this.driver.publish(['sender', this.room, id], {
           type: 'invoke',
           id: this.id,
           credentials,
@@ -107,30 +104,36 @@ export class Receiver extends EventTarget {
               clearTimeout(timeout);
               this.connections.delete(id);
 
-              conn.channels?.forEach(channel => channel?.close());
+              conn.channels?.forEach((channel) => channel?.close());
               conn.peer?.close();
 
-              this.dispatchEvent(new CustomEvent('dispose', {
-                detail: { id, peer: conn.peer, error, metadata },
-              }));
+              this.dispatchEvent(
+                new CustomEvent('dispose', {
+                  detail: { id, peer: conn.peer, error, metadata },
+                }),
+              );
             },
             channels: new Map(),
           };
           this.connections.set(id, conn);
 
-          const timeout = this.connectionTimeout > 0 && setTimeout(
-            () => conn.dispose(new Error('Connection timeout')),
-            this.connectionTimeout * 1000,
-          );
+          const timeout =
+            this.connectionTimeout > 0 &&
+            setTimeout(
+              () => conn.dispose(new Error('Connection timeout')),
+              this.connectionTimeout * 1000,
+            );
 
           conn.peer.addEventListener('iceconnectionstatechange', (e) => {
             const { iceConnectionState } = e.target;
             switch (iceConnectionState) {
               case 'connected':
                 clearTimeout(timeout);
-                this.dispatchEvent(new CustomEvent('connect', {
-                  detail: { id, peer: conn.peer, metadata },
-                }));
+                this.dispatchEvent(
+                  new CustomEvent('connect', {
+                    detail: { id, peer: conn.peer, metadata },
+                  }),
+                );
                 break;
               case 'disconnected':
                 conn.dispose();
@@ -143,7 +146,7 @@ export class Receiver extends EventTarget {
 
           conn.peer.addEventListener('icecandidate', (e) => {
             if (!e?.candidate) return;
-            this.driver.dispatch(['sender', this.room, id], {
+            this.driver.publish(['sender', this.room, id], {
               type: 'candidate',
               id: this.id,
               candidate: e.candidate,
@@ -156,52 +159,82 @@ export class Receiver extends EventTarget {
 
             conn.channels.set(channel.label, channel);
 
-            channel.addEventListener('open', () => {
-              this.dispatchEvent(new CustomEvent('channel:open', {
-                detail: { id, peer: conn.peer, channel, metadata },
-              }));
-            }, { once: true });
+            channel.addEventListener(
+              'open',
+              () => {
+                this.dispatchEvent(
+                  new CustomEvent('channel:open', {
+                    detail: { id, peer: conn.peer, channel, metadata },
+                  }),
+                );
+              },
+              { once: true },
+            );
 
-            channel.addEventListener('close', () => {
-              this.dispatchEvent(new CustomEvent('channel:close', {
-                detail: { id, peer: conn.peer, channel, metadata },
-              }));
-            }, { once: true });
+            channel.addEventListener(
+              'close',
+              () => {
+                this.dispatchEvent(
+                  new CustomEvent('channel:close', {
+                    detail: { id, peer: conn.peer, channel, metadata },
+                  }),
+                );
+              },
+              { once: true },
+            );
 
             channel.addEventListener('error', (e) => {
               const { error } = e;
-              this.dispatchEvent(new CustomEvent('channel:error', {
-                detail: { id, peer: conn.peer, channel, error, metadata },
-              }));
+              this.dispatchEvent(
+                new CustomEvent('channel:error', {
+                  detail: { id, peer: conn.peer, channel, error, metadata },
+                }),
+              );
             });
 
             channel.addEventListener('message', (e) => {
               const { data } = e;
-              this.dispatchEvent(new CustomEvent('channel:message', {
-                detail: { id, peer: conn.peer, channel, data, metadata },
-              }));
+              this.dispatchEvent(
+                new CustomEvent('channel:message', {
+                  detail: { id, peer: conn.peer, channel, data, metadata },
+                }),
+              );
             });
           });
 
-          conn.peer.addEventListener('track', (e) => {
-            conn.stream = e.streams[0];
-            this.dispatchEvent(new CustomEvent('stream', {
-              detail: { id, peer: conn.peer, stream: conn.stream, metadata },
-            }));
-          }, { once: true });
+          conn.peer.addEventListener(
+            'track',
+            (e) => {
+              conn.stream = e.streams[0];
+              this.dispatchEvent(
+                new CustomEvent('stream', {
+                  detail: {
+                    id,
+                    peer: conn.peer,
+                    stream: conn.stream,
+                    metadata,
+                  },
+                }),
+              );
+            },
+            { once: true },
+          );
 
-          await conn.peer.setRemoteDescription(new RTCSessionDescription(offer));
+          await conn.peer.setRemoteDescription(
+            new RTCSessionDescription(offer),
+          );
 
           // add queued candidates
           if (this.candidateQueues.has(id)) {
             for (let candidate of this.candidateQueues.get(id)) {
               try {
                 await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
-              }
-              catch (error) {
-                this.dispatchEvent(new CustomEvent('error', {
-                  detail: { id, error },
-                }));
+              } catch (error) {
+                this.dispatchEvent(
+                  new CustomEvent('error', {
+                    detail: { id, error },
+                  }),
+                );
               }
             }
             this.candidateQueues.delete(id);
@@ -210,18 +243,20 @@ export class Receiver extends EventTarget {
           await conn.peer.setLocalDescription(await conn.peer.createAnswer());
 
           // send answer
-          this.driver.dispatch(['sender', this.room, id], {
+          this.driver.publish(['sender', this.room, id], {
             type: 'answer',
             id: this.id,
             answer: conn.peer.localDescription,
           });
-        }
-        catch (error) {
+        } catch (error) {
           const conn = this.connections.get(id);
           if (conn) conn.dispose(error);
-          else this.dispatchEvent(new CustomEvent('error', {
-            detail: { id, error },
-          }));
+          else
+            this.dispatchEvent(
+              new CustomEvent('error', {
+                detail: { id, error },
+              }),
+            );
         }
 
         return;
@@ -239,11 +274,12 @@ export class Receiver extends EventTarget {
 
         try {
           await conn.peer.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-        catch (error) {
-          this.dispatchEvent(new CustomEvent('error', {
-            detail: { id, error },
-          }));
+        } catch (error) {
+          this.dispatchEvent(
+            new CustomEvent('error', {
+              detail: { id, error },
+            }),
+          );
         }
 
         return;
@@ -263,7 +299,7 @@ export class Receiver extends EventTarget {
     this.driver.subscribe(['receiver', this.room], this._handler);
     this.driver.subscribe(['receiver', this.room, this.id], this._handler);
 
-    this.driver.dispatch(['sender', this.room], {
+    this.driver.publish(['sender', this.room], {
       type: 'invoke',
       id: this.id,
       credentials,
@@ -277,7 +313,7 @@ export class Receiver extends EventTarget {
         }
         if (this._ping > 0) {
           this._ping--;
-          this.driver.dispatch(['sender', this.room], {
+          this.driver.publish(['sender', this.room], {
             type: 'invoke',
             id: this.id,
             credentials,

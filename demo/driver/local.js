@@ -35,8 +35,7 @@ export class LocalDriver extends Map {
     if (this.has(ns)) {
       if (handler) {
         this.get(ns).delete(handler);
-      }
-      else {
+      } else {
         this.get(ns).clear();
       }
       if (!this.get(ns).size) {
@@ -45,7 +44,7 @@ export class LocalDriver extends Map {
     }
   }
 
-  dispatch(namespace, data) {
+  publish(namespace, data) {
     const ns = namespace.join(':');
     localStorage.setItem(ns, JSON.stringify({ ...data, _: Math.random() }));
   }

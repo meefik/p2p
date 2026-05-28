@@ -38,12 +38,12 @@ body {
 
 .grid:empty {
   background: repeating-linear-gradient(
-      45deg,
-      #222 0,
-      #222 1em,
-      transparent 0,
-      transparent 2em
-    );
+    45deg,
+    #222 0,
+    #222 1em,
+    transparent 0,
+    transparent 2em
+  );
   border: 0.5em solid #333;
 }
 
@@ -81,7 +81,7 @@ body {
   display: none;
 }
 
-.grid >div:has(video[data-expanded="true"]) {
+.grid > div:has(video[data-expanded="true"]) {
   position: fixed;
   left: 0;
   top: 0;
@@ -120,7 +120,7 @@ body {
 }
 
 .grid > div:not(:has(video[data-audio="true"]))::after {
-  content: '🔇';
+  content: "🔇";
   position: absolute;
   display: block;
   font-size: 1em;
@@ -293,19 +293,19 @@ body {
 }
 
 .toolbar .microphone_btn::after {
-  content: '🎤';
+  content: "🎤";
 }
 
 .toolbar .camera_btn::after {
-  content: '📹';
+  content: "📹";
 }
 
 .toolbar .screen_btn::after {
-  content: '🖥️';
+  content: "🖥️";
 }
 
 .toolbar .chat_btn::after {
-  content: '💬';
+  content: "💬";
 }
 
 /* Dialog */
@@ -328,7 +328,7 @@ body {
   width: 250px;
   height: fit-content;
   background-color: #333;
-  margin-bottom: 0.5em;  
+  margin-bottom: 0.5em;
 }
 
 .dialog label {
@@ -337,7 +337,8 @@ body {
   margin-bottom: 0.5em;
 }
 
-.dialog input, .dialog select {
+.dialog input,
+.dialog select {
   display: block;
   padding: 0.5em;
   border: 2px solid #444;
@@ -359,7 +360,7 @@ body {
   margin-top: 1em;
   font-weight: bold;
   font-size: 1em;
-  cursor: pointer
+  cursor: pointer;
 }
 
 .dialog button:hover {
@@ -414,17 +415,17 @@ body {
   font-weight: bold;
   line-height: 1.5em;
   text-decoration: none;
-  text-shadow: 0 -1px rgba(0, 0, 0, .5);
+  text-shadow: 0 -1px rgba(0, 0, 0, 0.5);
   text-align: center;
   text-indent: 0;
-  padding: .15em;
+  padding: 0.15em;
   top: 7em;
   left: -3em;
   border: 2px dashed #aaa;
   outline: 2px solid #a00;
   transform: rotate(45deg);
   background-image: linear-gradient(to bottom, #a00, #c00, #a00);
-  box-shadow: 0 4px 4px 0 rgba(0, 0, 0, .5);
+  box-shadow: 0 4px 4px 0 rgba(0, 0, 0, 0.5);
   pointer-events: auto;
 }
 

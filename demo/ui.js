@@ -33,7 +33,10 @@ function createGrid() {
       const score = totalArea - empty * tileW * tileH * 0.02;
 
       const diff = score - best.score;
-      if (diff > 1e-6 || (Math.abs(diff) < 1e-6 && cols * rows < best.cols * best.rows)) {
+      if (
+        diff > 1e-6 ||
+        (Math.abs(diff) < 1e-6 && cols * rows < best.cols * best.rows)
+      ) {
         best = { cols, rows, score };
       }
     }
@@ -53,26 +56,31 @@ function createGrid() {
       video,
     } = options || {};
 
-    const parent = grid.querySelector(`div[data-id="${pid}"]`) || document.createElement('div');
+    const parent =
+      grid.querySelector(`div[data-id="${pid}"]`) ||
+      document.createElement('div');
     parent.dataset.id = pid;
     if (nickname) {
       parent.dataset.name = nickname;
     }
-    parent.querySelectorAll(`div[data-id="${id}"]`).forEach(el => el.remove());
+    parent
+      .querySelectorAll(`div[data-id="${id}"]`)
+      .forEach((el) => el.remove());
 
     if (stream) {
-      const el = parent.querySelector(`video[data-id="${id}"]`) || document.createElement('video');
+      const el =
+        parent.querySelector(`video[data-id="${id}"]`) ||
+        document.createElement('video');
       el.dataset.id = id;
       el.autoplay = true;
       el.muted = muted;
       el.playsInline = true;
       el.disablePictureInPicture = true;
-      el.oncontextmenu = e => e.preventDefault();
+      el.oncontextmenu = (e) => e.preventDefault();
       el.onclick = () => {
         if (el.dataset.expanded) {
           delete el.dataset.expanded;
-        }
-        else {
+        } else {
           el.dataset.expanded = 'true';
         }
       };
@@ -88,8 +96,7 @@ function createGrid() {
       parent.appendChild(el);
       el.srcObject = stream;
       el.play();
-    }
-    else if (!parent.querySelector(`[data-id="${id}"]`)) {
+    } else if (!parent.querySelector(`[data-id="${id}"]`)) {
       const stub = document.createElement('div');
       stub.dataset.id = id;
       parent.appendChild(stub);
@@ -146,8 +153,7 @@ function createToolbar({ onMicrophone, onCamera, onScreen, onChat }) {
         await onMicrophone(enabled);
       }
       microphoneButton.dataset.enabled = enabled ? 'true' : 'false';
-    }
-    finally {
+    } finally {
       microphoneButton.disabled = false;
     }
   };
@@ -165,8 +171,7 @@ function createToolbar({ onMicrophone, onCamera, onScreen, onChat }) {
         await onCamera(enabled);
       }
       cameraButton.dataset.enabled = enabled ? 'true' : 'false';
-    }
-    finally {
+    } finally {
       cameraButton.disabled = false;
     }
   };
@@ -185,8 +190,7 @@ function createToolbar({ onMicrophone, onCamera, onScreen, onChat }) {
         await onScreen(enabled);
       }
       screenButton.dataset.enabled = enabled ? 'true' : 'false';
-    }
-    finally {
+    } finally {
       screenButton.disabled = false;
     }
   };
@@ -203,8 +207,7 @@ function createToolbar({ onMicrophone, onCamera, onScreen, onChat }) {
         await onChat(enabled);
       }
       chatButton.dataset.enabled = enabled ? 'true' : 'false';
-    }
-    finally {
+    } finally {
       chatButton.disabled = false;
     }
   };
@@ -261,8 +264,7 @@ function createChat({ toolbar, onMessage }) {
           }
           chat.appendMessage(message);
           input.value = '';
-        }
-        finally {
+        } finally {
           requestAnimationFrame(() => input.focus());
           input.disabled = false;
         }
@@ -345,8 +347,7 @@ function createJoinDialog({ driversList, nickname, driver, onSubmit }) {
     button.disabled = true;
     try {
       await onSubmit({ nickname, driver });
-    }
-    finally {
+    } finally {
       button.disabled = false;
     }
   };
@@ -354,7 +355,14 @@ function createJoinDialog({ driversList, nickname, driver, onSubmit }) {
   return dialog;
 }
 
-export function createApp({ driversList, onMicrophone, onCamera, onScreen, onMessage, onJoin } = {}) {
+export function createApp({
+  driversList,
+  onMicrophone,
+  onCamera,
+  onScreen,
+  onMessage,
+  onJoin,
+} = {}) {
   const container = document.createElement('div');
   container.className = 'container';
 
